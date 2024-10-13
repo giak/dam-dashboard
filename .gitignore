@@ -30,6 +30,7 @@ coverage
 
 *.tsbuildinfo
 
+.env
 .cursorrules
 .cursorignore
 .prompts/*

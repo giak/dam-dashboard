@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/app/Dockerfile
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - ../src:/app/src
+      - /app/node_modules
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Ajoutez d'autres services si nécessaire (base de données, cache, etc.)
+
+volumes:
+  node_modules:

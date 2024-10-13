@@ -1,9 +1,24 @@
 import vue from '@vitejs/plugin-vue';
 import path from 'node:path';
 import { defineConfig } from 'vite';
+import { compression } from 'vite-plugin-compression2';
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    compression({
+      algorithm: 'brotliCompress',
+      filename: (fileName) => `${fileName}.br`,
+      threshold: 1024,
+      compressionOptions: {
+        params: {
+          [11]: 11
+        }
+      },
+      exclude: [/\.(br|gz)$/, /\.(png|jpe?g|gif|webp)$/i],
+      deleteOriginalAssets: false
+    }),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
