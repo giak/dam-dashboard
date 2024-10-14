@@ -1,36 +1,28 @@
 import vue from '@vitejs/plugin-vue';
-import path from 'node:path';
-import { defineConfig } from 'vite';
-import { compression } from 'vite-plugin-compression2';
+import path from 'path';
+import { defineConfig, loadEnv } from 'vite';
 
-export default defineConfig({
-  plugins: [
-    vue(),
-    compression({
-      algorithm: 'brotliCompress',
-      filename: (fileName) => `${fileName}.br`,
-      threshold: 1024,
-      compressionOptions: {
-        params: {
-          [11]: 11
-        }
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  return {
+    plugins: [vue()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+        '@components': path.resolve(__dirname, './src/components'),
+        '@composables': path.resolve(__dirname, './src/composables'),
+        '@domain': path.resolve(__dirname, './src/domain'),
+        '@infrastructure': path.resolve(__dirname, './src/infrastructure'),
+        '@presentation': path.resolve(__dirname, './src/presentation'),
+        '@store': path.resolve(__dirname, './src/store'),
+        '@utils': path.resolve(__dirname, './src/utils'),
+        '@assets': path.resolve(__dirname, './src/assets'),
+        '@config': path.resolve(__dirname, './src/config'),
+        '@types': path.resolve(__dirname, './src/types'),
       },
-      exclude: [/\.(br|gz)$/, /\.(png|jpe?g|gif|webp)$/i],
-      deleteOriginalAssets: false
-    }),
-  ],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@components': path.resolve(__dirname, './src/components'),
-      '@composables': path.resolve(__dirname, './src/composables'),
-      '@domain': path.resolve(__dirname, './src/domain'),
-      '@infrastructure': path.resolve(__dirname, './src/infrastructure'),
-      '@presentation': path.resolve(__dirname, './src/presentation'),
-      '@store': path.resolve(__dirname, './src/store'),
-      '@utils': path.resolve(__dirname, './src/utils'),
-      '@assets': path.resolve(__dirname, './src/assets'),
-      '@config': path.resolve(__dirname, './src/config'),
     },
-  },
+    define: {
+      'process.env': env
+    }
+  };
 });

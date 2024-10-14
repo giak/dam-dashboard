@@ -2,7 +2,7 @@
     "compilerOptions": {
         "composite": true,
         "lib": ["esnext", "dom"],
-        "baseUrl": "./",
+        "baseUrl": ".",
         "paths": {
             "@/*": ["src/*"],
             "@components/*": ["src/components/*"],
@@ -13,10 +13,10 @@
             "@store/*": ["src/store/*"],
             "@utils/*": ["src/utils/*"],
             "@assets/*": ["src/assets/*"],
-            "@config/*": ["src/config/*"]
+            "@config/*": ["src/config/*"],
+            "@types/*": ["src/types/*"]
         },
-        "typeRoots": ["src/@types", "node_modules/@types"],
-        "types": ["vitest", "vitest/globals", "vitest/importMeta", "lodash-es"],
+        "typeRoots": ["src/types", "node_modules/@types"],
         "target": "ESNext",
         "module": "ESNext",
         "moduleResolution": "bundler",
@@ -28,6 +28,11 @@
         "verbatimModuleSyntax": true
     },
     "extends": "@vue/tsconfig/tsconfig.dom.json",
-    "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"],
+    "include": [
+        "src/**/*.ts",
+        "src/**/*.d.ts",
+        "src/**/*.tsx",
+        "src/**/*.vue"
+    ],
     "exclude": ["src/**/__tests__/*"]
 }
