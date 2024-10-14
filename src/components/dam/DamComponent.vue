@@ -1,7 +1,7 @@
 <template>
   <div class="dam-component">
     <h2 class="text-2xl font-bold mb-4">{{ damState.name }}</h2>
-    <div class="grid grid-cols-2 gap-4">
+    <div class="grid grid-cols-2 gap-4 mb-4">
       <div class="stat-item">
         <span class="font-semibold">Niveau d'eau actuel:</span>
         <span>{{ currentWaterLevel.toFixed(4) }} m</span>
@@ -16,7 +16,7 @@
       </div>
       <div class="stat-item">
         <span class="font-semibold">Dernière mise à jour:</span>
-        <span>{{ new Date(damState.lastUpdated).toLocaleString() }}</span>
+        <span>{{ formattedLastUpdate }}</span>
       </div>
     </div>
     <WaterLevelChart :currentWaterLevel="currentWaterLevel" />
@@ -26,27 +26,17 @@
 <script setup lang="ts">
 import type { DamInterface } from '@/types/dam/DamInterface';
 import { useDam } from '@composables/dam/useDam';
-import { onMounted, onUnmounted, watch } from 'vue';
+import { computed } from 'vue';
 import WaterLevelChart from './WaterLevelChart.vue';
+
 
 const props = defineProps<{
   initialData: DamInterface;
 }>();
 
-const { damState, currentWaterLevel, outflowRate, inflowRate, cleanup } = useDam(props.initialData);
+const { damState, currentWaterLevel, outflowRate, inflowRate } = useDam(props.initialData);
 
-watch(() => damState.value, (newState) => {
-  console.log('DamComponent: Nouvel état du barrage:', newState);
-}, { deep: true });
-
-onMounted(() => {
-  console.log('DamComponent: Composant monté');
-});
-
-onUnmounted(() => {
-  console.log('DamComponent: Composant démonté');
-  cleanup();
-});
+const formattedLastUpdate = computed(() => new Date(damState.lastUpdated).toLocaleString());
 </script>
 
 <style scoped>

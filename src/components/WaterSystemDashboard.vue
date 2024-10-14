@@ -6,10 +6,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
-import DamComponent from '@components/dam/DamComponent.vue';
 import type { DamInterface } from '@/types/dam/DamInterface';
+import DamComponent from '@components/dam/DamComponent.vue';
 import { v4 as uuidv4 } from 'uuid';
+import { ref } from 'vue';
 
 const initialDamData = ref<DamInterface>({
   id: uuidv4(),

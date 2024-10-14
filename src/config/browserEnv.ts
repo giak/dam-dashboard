@@ -7,4 +7,5 @@ export const browserConfig = {
   maxWaterLevel: 100,
   minWaterLevel: 0,
   damSurfaceArea: 10000, // en m²
+  maxFlowRateChange: 2, // Changement maximum du débit par mise à jour
 };

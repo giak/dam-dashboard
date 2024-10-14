@@ -1,31 +1,31 @@
+import { updateDamState } from '@/domain/dam';
 import type { DamInterface } from '@/types/dam/DamInterface';
 import { browserConfig } from '@config/browserEnv';
-import { ref, computed } from 'vue';
-import { updateDamState } from '@/utils/hydraulicCalculations';
+import { computed, onUnmounted, reactive } from 'vue';
 
 export function useDam(initialData: DamInterface) {
-  const damState = ref<DamInterface>(initialData);
+  const damState = reactive<DamInterface>(initialData);
 
-  const currentWaterLevel = computed(() => damState.value.currentWaterLevel);
-  const outflowRate = computed(() => damState.value.outflowRate);
-  const inflowRate = computed(() => damState.value.inflowRate);
+  const currentWaterLevel = computed(() => damState.currentWaterLevel);
+  const outflowRate = computed(() => damState.outflowRate);
+  const inflowRate = computed(() => damState.inflowRate);
 
   const simulateWaterFlow = () => {
-    damState.value = updateDamState(damState.value, browserConfig.updateInterval / 1000, browserConfig.damSurfaceArea);
-    console.log('useDam: État mis à jour', damState.value);
+    const updatedState = updateDamState(damState, browserConfig.updateInterval / 1000, browserConfig.damSurfaceArea);
+    Object.assign(damState, updatedState);
+    console.log('useDam: État mis à jour', damState);
   };
 
   const intervalId = setInterval(simulateWaterFlow, browserConfig.updateInterval);
 
-  const cleanup = () => {
+  onUnmounted(() => {
     clearInterval(intervalId);
-  };
+  });
 
   return {
     damState,
     currentWaterLevel,
     outflowRate,
     inflowRate,
-    cleanup,
   };
 }

@@ -1,6 +1,6 @@
 import { useDam } from '@composables/dam/useDam';
 import type { DamInterface } from '@/types/dam/DamInterface';
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 
 export function useWaterSystem() {
   const dam = ref<ReturnType<typeof useDam> | null>(null);
@@ -14,13 +14,9 @@ export function useWaterSystem() {
 
   const totalWaterLevel = computed(() => dam.value?.currentWaterLevel || 0);
 
-  watch(systemState, (newState) => {
-    console.log('useWaterSystem: Nouvel état du système', newState);
-  }, { deep: true });
-
   const cleanup = () => {
     console.log('useWaterSystem: Nettoyage');
-    dam.value?.cleanup();
+    // Aucune opération de nettoyage n'est nécessaire car useDam gère son propre nettoyage
   };
 
   return {

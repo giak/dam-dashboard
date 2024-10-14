@@ -24,7 +24,7 @@
     "prepare": "husky",
     "test:hooks": "husky lint-staged",
     "format:check": "biome check .",
-    "format:write": "biome check --apply .",
+    "format:write": "biome check --write .",
     "generate:component": "node scripts/generateComponent.js",
     "test:unit": "vitest",
     "test:e2e:open": "cypress open",
@@ -35,6 +35,7 @@
     "@datastructures-js/priority-queue": "^6.3.1",
     "@primevue/themes": "^4.1.0",
     "autoprefixer": "^10.4.20",
+    "chart.js": "^3.9.1",
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.5",
     "lodash-es": "^4.17.21",
@@ -48,6 +49,7 @@
     "tailwindcss": "^3.4.13",
     "uuid": "^10.0.0",
     "vue": "^3.5.12",
+    "vue-chartjs": "^4.1.1",
     "vue-router": "^4.4.5"
   },
   "devDependencies": {
