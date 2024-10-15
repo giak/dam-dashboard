@@ -2,6 +2,7 @@ import vue from '@vitejs/plugin-vue';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
@@ -18,7 +19,7 @@ export default defineConfig(({ mode }) => {
         '@utils': path.resolve(__dirname, './src/utils'),
         '@assets': path.resolve(__dirname, './src/assets'),
         '@config': path.resolve(__dirname, './src/config'),
-        '@types': path.resolve(__dirname, './src/types'),
+        '@type': path.resolve(__dirname, './src/types'),
       },
     },
     define: {

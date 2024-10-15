@@ -1,6 +1,6 @@
-import type { DamInterface } from '@/types/dam/DamInterface';
 import { useDam } from '@composables/dam/useDam';
-import { BehaviorSubject, Observable, shareReplay, switchMap, distinctUntilChanged, tap } from 'rxjs';
+import type { DamInterface } from '@type/dam/DamInterface';
+import { BehaviorSubject, distinctUntilChanged, Observable, shareReplay, switchMap, tap } from 'rxjs';
 
 /**
  * @description useWaterSystem is a composable function that provides a stream of dam state data.

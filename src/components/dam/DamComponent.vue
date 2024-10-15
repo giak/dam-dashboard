@@ -24,7 +24,7 @@
 </template>
 
 <script setup lang="ts">
-import type { DamInterface } from '@/types/dam/DamInterface';
+import type { DamInterface } from '@type/dam/DamInterface';
 import { computed } from 'vue';
 import WaterLevelChart from './WaterLevelChart.vue';
 

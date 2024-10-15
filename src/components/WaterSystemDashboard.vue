@@ -6,11 +6,11 @@
 </template>
 
 <script setup lang="ts">
-import type { DamInterface } from '@/types/dam/DamInterface';
 import DamComponent from '@components/dam/DamComponent.vue';
 import { useWaterSystem } from '@composables/useWaterSystem';
-import { onMounted, onUnmounted, ref } from 'vue';
+import type { DamInterface } from '@type/dam/DamInterface';
 import { Subscription } from 'rxjs';
+import { onMounted, onUnmounted, ref } from 'vue';
 
 /**
  * @description damState is a ref that holds the dam state.

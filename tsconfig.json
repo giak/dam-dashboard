@@ -14,9 +14,9 @@
             "@utils/*": ["src/utils/*"],
             "@assets/*": ["src/assets/*"],
             "@config/*": ["src/config/*"],
-            "@types/*": ["src/types/*"]
+            "@type/*": ["src/types/*"]
         },
-        "typeRoots": ["src/types", "node_modules/@types"],
+        "typeRoots": ["src/types", "node_modules/@types"],   
         "target": "ESNext",
         "module": "ESNext",
         "moduleResolution": "bundler",

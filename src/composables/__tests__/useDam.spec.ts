@@ -1,6 +1,6 @@
+import { DamInterface } from '@type/dam/DamInterface';
 import { firstValueFrom, take, toArray } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DamInterface } from '../../types/dam/DamInterface';
 import { useDam } from '../dam/useDam';
 
 describe('useDam', () => {

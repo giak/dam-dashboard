@@ -1,4 +1,4 @@
-import type { DamInterface } from '@/types/dam/DamInterface';
+import type { DamInterface } from '@type/dam/DamInterface';
 
 export function calculateNetFlow(inflow: number, outflow: number): number {
   return inflow - outflow;

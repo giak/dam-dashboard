@@ -1,7 +1,7 @@
-import { updateDamState } from '@/domain/dam';
-import type { DamInterface } from '@/types/dam/DamInterface';
 import { browserConfig } from '@config/browserEnv';
-import { BehaviorSubject, Observable, interval, map, shareReplay, distinctUntilChanged, tap } from 'rxjs';
+import { updateDamState } from '@domain/dam';
+import type { DamInterface } from '@type/dam/DamInterface';
+import { BehaviorSubject, Observable, distinctUntilChanged, interval, map, shareReplay, tap } from 'rxjs';
 
 /**
  * @description useDam is a composable function that provides a stream of dam state data.
@@ -18,7 +18,7 @@ export function useDam(initialData: DamInterface) {
   const currentWaterLevel$: Observable<number> = damState$.pipe(
     map(state => state.currentWaterLevel),
     distinctUntilChanged(),
-    tap(level => console.log('useDam: Nouveau niveau d\'eau', level)),
+    tap(level => console.log('useDam: Nouveau niveau deau', level)),
     shareReplay(1)
   );
 
@@ -44,6 +44,7 @@ export function useDam(initialData: DamInterface) {
     shareReplay(1)
   );
 
+  
   /**
    * @description simulateWaterFlow is a function that simulates the water flow in the dam.
    * @returns {void}
