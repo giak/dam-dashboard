@@ -1,10 +1,13 @@
 import vue from '@vitejs/plugin-vue';
 import path from 'node:path';
-import { defineConfig, mergeConfig } from 'vite';
-import { defineConfig as defineVitestConfig } from 'vitest/config';
+import { defineConfig } from 'vite';
 
-export default mergeConfig(
+export default 
   defineConfig({
+    test: {
+      globals: true,
+      environment: 'jsdom',
+    },
     plugins: [vue()],
     resolve: {
       alias: {
@@ -20,11 +23,5 @@ export default mergeConfig(
         '@config': path.resolve(__dirname, './src/config'),
       },
     },
-  }),
-  defineVitestConfig({
-    test: {
-      globals: true,
-      environment: 'jsdom',
-    },
-  })
-);
+  });
+

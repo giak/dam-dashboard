@@ -4,39 +4,35 @@
     <div class="grid grid-cols-2 gap-4 mb-4">
       <div class="stat-item">
         <span class="font-semibold">Niveau d'eau actuel:</span>
-        <span>{{ currentWaterLevel.toFixed(4) }} m</span>
+        <span>{{ damState.currentWaterLevel.toFixed(4) }} m</span>
       </div>
       <div class="stat-item">
         <span class="font-semibold">Débit sortant:</span>
-        <span>{{ outflowRate.toFixed(2) }} m³/s</span>
+        <span>{{ damState.outflowRate.toFixed(2) }} m³/s</span>
       </div>
       <div class="stat-item">
         <span class="font-semibold">Débit entrant:</span>
-        <span>{{ inflowRate.toFixed(2) }} m³/s</span>
+        <span>{{ damState.inflowRate.toFixed(2) }} m³/s</span>
       </div>
       <div class="stat-item">
         <span class="font-semibold">Dernière mise à jour:</span>
         <span>{{ formattedLastUpdate }}</span>
       </div>
     </div>
-    <WaterLevelChart :currentWaterLevel="currentWaterLevel" />
+    <WaterLevelChart :currentWaterLevel="damState.currentWaterLevel" />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { DamInterface } from '@/types/dam/DamInterface';
-import { useDam } from '@composables/dam/useDam';
 import { computed } from 'vue';
 import WaterLevelChart from './WaterLevelChart.vue';
 
-
 const props = defineProps<{
-  initialData: DamInterface;
+  damState: DamInterface;
 }>();
 
-const { damState, currentWaterLevel, outflowRate, inflowRate } = useDam(props.initialData);
-
-const formattedLastUpdate = computed(() => new Date(damState.lastUpdated).toLocaleString());
+const formattedLastUpdate = computed(() => new Date(props.damState.lastUpdated).toLocaleString());
 </script>
 
 <style scoped>

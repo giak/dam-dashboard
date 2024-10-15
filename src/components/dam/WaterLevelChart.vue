@@ -7,7 +7,7 @@
 
 <script setup lang="ts">
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Title, Tooltip } from 'chart.js';
-import { computed, ref, watch } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { Bar } from 'vue-chartjs';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
@@ -69,13 +69,14 @@ const chartOptions = {
   }
 };
 
-const updateChartData = computed(() => {
+const updateChartData = () => {
   chartData.value.datasets[0].data = [props.currentWaterLevel];
-  return chartData.value;
-});
+};
 
-watch(() => props.currentWaterLevel, () => {
-  updateChartData.value;
+watch(() => props.currentWaterLevel, updateChartData, { immediate: true });
+
+onMounted(() => {
+  updateChartData();
 });
 </script>
 
