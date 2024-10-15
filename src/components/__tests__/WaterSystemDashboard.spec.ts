@@ -1,4 +1,4 @@
-import { useWaterSystem } from '@/composables/useWaterSystem';
+import { useWaterSystem } from '@composables/useWaterSystem';
 import { mount } from '@vue/test-utils';
 import { BehaviorSubject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
