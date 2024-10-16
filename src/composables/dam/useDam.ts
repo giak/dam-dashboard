@@ -1,81 +1,126 @@
 import { browserConfig } from '@config/browserEnv';
-import { updateDamState } from '@domain/dam';
-import type { DamInterface } from '@type/dam/DamInterface';
-import { BehaviorSubject, Observable, distinctUntilChanged, interval, map, shareReplay, tap } from 'rxjs';
+import { calculateNetFlow, calculateNewWaterLevel, calculateWaterLevelChange, simulateFlowRate } from '@domain/dam';
+import type { DamInterface, DamUpdateInterface } from '@type/dam/DamInterface';
+import { BehaviorSubject, Observable, distinctUntilChanged, interval, map, shareReplay } from 'rxjs';
 
 /**
- * @description useDam is a composable function that provides a stream of dam state data.
- * @param {DamInterface} initialData - The initial state of the dam.
- * @returns {Object} An object containing the dam state, current water level, outflow rate, inflow rate, and a cleanup function.
+ * Fonction composable pour gérer l'état et les opérations d'un barrage.
+ * Cette fonction encapsule la logique de simulation et de mise à jour des niveaux d'eau et des débits d'un barrage.
+ * 
+ * @param {DamInterface} initialData - État initial du barrage
+ * @returns {Object} Un objet contenant des observables et des méthodes pour la gestion du barrage
  */
 export function useDam(initialData: DamInterface) {
+  // BehaviorSubject pour contenir et émettre l'état actuel du barrage
   const damState$ = new BehaviorSubject<DamInterface>(initialData);
 
   /**
-   * @description currentWaterLevel$ is an observable that emits the current water level of the dam.
-   * @type {Observable<number>}
+   * Observable qui émet le niveau d'eau actuel du barrage.
+   * Il filtre les valeurs en double et partage la dernière émission avec les nouveaux abonnés.
    */
   const currentWaterLevel$: Observable<number> = damState$.pipe(
     map(state => state.currentWaterLevel),
     distinctUntilChanged(),
-    tap(level => console.log('useDam: Nouveau niveau deau', level)),
     shareReplay(1)
   );
 
   /**
-   * @description outflowRate$ is an observable that emits the outflow rate of the dam.
-   * @type {Observable<number>}
+   * Observable qui émet le débit sortant du barrage.
+   * Il filtre les valeurs en double et partage la dernière émission avec les nouveaux abonnés.
    */
   const outflowRate$: Observable<number> = damState$.pipe(
     map(state => state.outflowRate),
     distinctUntilChanged(),
-    tap(rate => console.log('useDam: Nouveau débit sortant', rate)),
     shareReplay(1)
   );
 
   /**
-   * @description inflowRate$ is an observable that emits the inflow rate of the dam.
-   * @type {Observable<number>}
+   * Observable qui émet le débit entrant du barrage.
+   * Il filtre les valeurs en double et partage la dernière émission avec les nouveaux abonnés.
    */
   const inflowRate$: Observable<number> = damState$.pipe(
     map(state => state.inflowRate),
     distinctUntilChanged(),
-    tap(rate => console.log('useDam: Nouveau débit entrant', rate)),
     shareReplay(1)
   );
 
-  
   /**
-   * @description simulateWaterFlow is a function that simulates the water flow in the dam.
-   * @returns {void}
+   * Met à jour l'état du barrage en fonction des débits actuels et de l'intervalle de temps.
+   * Cette fonction calcule le nouveau niveau d'eau et simule les changements de débits.
+   * 
+   * @param {DamInterface} currentState - État actuel du barrage
+   * @param {number} timeInterval - Intervalle de temps pour la mise à jour en secondes
+   * @returns {DamInterface} État mis à jour du barrage
    */
-  const simulateWaterFlow = () => {
-    const currentState = damState$.getValue();
-    const updatedState = updateDamState(currentState, browserConfig.updateInterval / 1000, browserConfig.damSurfaceArea);
-    damState$.next(updatedState);
+  const updateDamState = (currentState: DamInterface, timeInterval: number): DamInterface => {
+    // Calcule le débit net (entrée - sortie)
+    const netFlow = calculateNetFlow(currentState.inflowRate, currentState.outflowRate);
+    
+    // Calcule le changement de niveau d'eau basé sur le débit net et l'intervalle de temps
+    const waterLevelChange = calculateWaterLevelChange(netFlow, timeInterval, browserConfig.damSurfaceArea);
+    
+    // Calcule le nouveau niveau d'eau, en s'assurant qu'il reste dans les limites min et max
+    const newWaterLevel = calculateNewWaterLevel(
+      currentState.currentWaterLevel,
+      waterLevelChange,
+      currentState.minWaterLevel,
+      currentState.maxWaterLevel
+    );
+
+    // Retourne l'état mis à jour avec le nouveau niveau d'eau et les débits simulés
+    return {
+      ...currentState,
+      currentWaterLevel: newWaterLevel,
+      inflowRate: simulateFlowRate(currentState.inflowRate, browserConfig.maxFlowRateChange),
+      outflowRate: simulateFlowRate(currentState.outflowRate, browserConfig.maxFlowRateChange),
+      lastUpdated: new Date(),
+    };
   };
 
   /**
-   * @description subscription is a subscription to the interval that calls simulateWaterFlow every browserConfig.updateInterval milliseconds.
-   * @type {Subscription}
+   * Démarre la simulation des changements de niveau d'eau du barrage.
+   * Cette fonction configure un intervalle pour mettre à jour régulièrement l'état du barrage.
+   * 
+   * @returns {Function} Une fonction pour arrêter la simulation
    */
-  const subscription = interval(browserConfig.updateInterval)
-    .subscribe(() => simulateWaterFlow());
+  const startSimulation = () => {
+    const subscription = interval(browserConfig.updateInterval).subscribe(() => {
+      const currentState = damState$.getValue();
+      const updatedState = updateDamState(currentState, browserConfig.updateInterval / 1000);
+      damState$.next(updatedState);
+    });
+
+    // Retourne une fonction pour arrêter la simulation en se désabonnant de l'intervalle
+    return () => subscription.unsubscribe();
+  };
 
   /**
-   * @description cleanup is a function that unsubscribes from the interval and completes the damState$ observable.
-   * @returns {void}
+   * Met à jour des propriétés spécifiques de l'état du barrage.
+   * Cette fonction permet des mises à jour partielles de l'état du barrage.
+   * 
+   * @param {DamUpdateInterface} update - Mise à jour partielle de l'état du barrage
+   */
+  const updateDam = (update: DamUpdateInterface) => {
+    const currentState = damState$.getValue();
+    damState$.next({ ...currentState, ...update });
+  };
+
+  /**
+   * Nettoie les ressources utilisées par la simulation du barrage.
+   * Cette fonction complète l'observable damState$.
    */
   const cleanup = () => {
-    subscription.unsubscribe();
     damState$.complete();
   };
 
+  // Retourne un objet avec tous les observables et fonctions nécessaires pour gérer le barrage
   return {
     damState$,
     currentWaterLevel$,
     outflowRate$,
     inflowRate$,
-    cleanup
+    updateDam,
+    startSimulation,
+    cleanup,
   };
 }
