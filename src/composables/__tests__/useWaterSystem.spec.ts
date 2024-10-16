@@ -62,4 +62,42 @@ describe('useWaterSystem', () => {
 
     expect(completeSpy).toHaveBeenCalled();
   });
+
+  it('should handle multiple dam initializations', async () => {
+    const { initializeDam, systemState$, cleanup } = useWaterSystem();
+    
+    const dam1: DamInterface = { ...initialDamData, id: '1', name: 'Dam 1' };
+    const dam2: DamInterface = { ...initialDamData, id: '2', name: 'Dam 2' };
+    
+    initializeDam(dam1);
+    
+    const state1 = await firstValueFrom(systemState$);
+    expect(state1?.name).toBe('Dam 1');
+    
+    initializeDam(dam2);
+    
+    const state2 = await firstValueFrom(systemState$);
+    expect(state2?.name).toBe('Dam 2');
+    
+    cleanup();
+  });
+
+  it('should emit correct total water level', async () => {
+    const { initializeDam, totalWaterLevel$, cleanup } = useWaterSystem();
+    
+    const dam: DamInterface = { ...initialDamData, currentWaterLevel: 75 };
+    
+    initializeDam(dam);
+    
+    const levelsPromise = firstValueFrom(totalWaterLevel$.pipe(take(3), toArray()));
+    
+    vi.advanceTimersByTime(2000);
+    
+    const levels = await levelsPromise;
+    expect(levels[0]).toBe(75);
+    expect(levels[1]).not.toBe(75);
+    expect(levels[2]).not.toBe(levels[1]);
+    
+    cleanup();
+  });
 });

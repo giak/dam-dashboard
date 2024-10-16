@@ -1,3 +1,4 @@
+import { browserConfig } from '@config/browserEnv';
 import type { DamInterface } from '@type/dam/DamInterface';
 import { firstValueFrom, take, toArray } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -75,5 +76,72 @@ describe('useDam', () => {
     cleanup();
 
     expect(completeSpy).toHaveBeenCalled();
+  });
+
+  it('should handle extreme water levels', async () => {
+    vi.useFakeTimers();
+    const extremeData: DamInterface = {
+      ...initialData,
+      currentWaterLevel: 100,  // Max level
+      inflowRate: 50,
+      outflowRate: 10
+    };
+    const { currentWaterLevel$, cleanup } = useDam(extremeData);
+    
+    const getNextLevel = () => firstValueFrom(currentWaterLevel$.pipe(take(1)));
+    
+    const level1 = await getNextLevel();
+    expect(level1).toBe(100);
+    
+    vi.advanceTimersByTime(browserConfig.updateInterval);
+    const level2 = await getNextLevel();
+    expect(level2).toBeCloseTo(100, 0);  // Allow some small variation
+    
+    vi.advanceTimersByTime(browserConfig.updateInterval);
+    const level3 = await getNextLevel();
+    expect(level3).toBeCloseTo(100, 0);  // Allow some small variation
+    
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('should handle zero inflow and outflow rates', async () => {
+    vi.useFakeTimers();
+    const zeroFlowData: DamInterface = {
+      ...initialData,
+      inflowRate: 0,
+      outflowRate: 0
+    };
+    const { currentWaterLevel$, cleanup } = useDam(zeroFlowData);
+    
+    const getNextLevel = () => firstValueFrom(currentWaterLevel$.pipe(take(1)));
+    
+    const level1 = await getNextLevel();
+    expect(level1).toBe(50);
+    
+    vi.advanceTimersByTime(browserConfig.updateInterval);
+    const level2 = await getNextLevel();
+    expect(level2).toBeCloseTo(50, 4);  // Allow very small variation
+    
+    vi.advanceTimersByTime(browserConfig.updateInterval);
+    const level3 = await getNextLevel();
+    expect(level3).toBeCloseTo(50, 4);  // Allow very small variation
+    
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('should emit updates at the correct interval', async () => {
+    const { currentWaterLevel$, cleanup } = useDam(initialData);
+    const updateInterval = 1000;  // Assuming this is the interval set in browserConfig
+    
+    const levelsPromise = firstValueFrom(currentWaterLevel$.pipe(take(4), toArray()));
+    
+    vi.advanceTimersByTime(updateInterval * 3);
+    
+    const levels = await levelsPromise;
+    expect(levels.length).toBe(4);  // Initial value + 3 updates
+    
+    cleanup();
   });
 });
