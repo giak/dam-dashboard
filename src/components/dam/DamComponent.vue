@@ -19,7 +19,11 @@
         <span>{{ formattedLastUpdate }}</span>
       </div>
     </div>
-    <WaterLevelChart :currentWaterLevel="damState.currentWaterLevel" />
+    <WaterLevelChart 
+      :currentWaterLevel="damState.currentWaterLevel"
+      :maxWaterLevel="damState.maxWaterLevel"
+      :minWaterLevel="damState.minWaterLevel"
+    />
   </div>
 </template>
 

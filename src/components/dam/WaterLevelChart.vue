@@ -1,83 +1,62 @@
 <template>
   <div class="water-level-chart">
-    <h3>Niveau d'eau: {{ currentWaterLevel.toFixed(2) }} m</h3>
-    <Bar :data="chartData" :options="chartOptions" />
+    <h3>Niveau d'eau: {{ formattedWaterLevel }} m</h3>
+    <Bar :data="chartData" :options="chartOptions" ref="chartRef" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Title, Tooltip } from 'chart.js';
-import { onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Bar } from 'vue-chartjs';
+import { createChartOptions } from './waterLevelChartOptions';
+import { useWaterLevelChart } from '@/composables/useWaterLevelChart';
 
+// Enregistrement des composants nécessaires pour Chart.js
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-const props = defineProps<{
+/**
+ * Interface définissant les props du composant
+ */
+interface PropsInterface {
   currentWaterLevel: number;
-}>();
+  maxWaterLevel: number;
+  minWaterLevel: number;
+}
 
-const chartData = ref({
-  labels: [''],
-  datasets: [
-    {
-      label: 'Niveau d\'eau (m)',
-      data: [props.currentWaterLevel],
-      backgroundColor: 'rgba(54, 162, 235, 0.8)',
-      borderColor: 'rgb(54, 162, 235)',
-      borderWidth: 1,
-      barPercentage: 1.0,
-      categoryPercentage: 1.0
-    }
-  ]
+// Définition des props avec des valeurs par défaut
+const props = withDefaults(defineProps<PropsInterface>(), {
+  maxWaterLevel: 100,
+  minWaterLevel: 0
 });
 
-const chartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  scales: {
-    y: {
-      beginAtZero: true,
-      suggestedMax: 100,
-      title: {
-        display: true,
-        text: 'Niveau (m)'
-      }
-    },
-    x: {
-      display: false,
-      grid: {
-        display: false
-      }
-    }
-  },
-  plugins: {
-    legend: {
-      display: false
-    },
-    tooltip: {
-      enabled: false
-    }
-  },
-  animation: {
-    duration: 0
-  },
-  layout: {
-    padding: {
-      left: 10,
-      right: 10
-    }
-  }
-};
+/**
+ * Formatte le niveau d'eau actuel pour l'affichage
+ */
+const formattedWaterLevel = computed(() => props.currentWaterLevel.toFixed(2));
 
-const updateChartData = () => {
-  chartData.value.datasets[0].data = [props.currentWaterLevel];
-};
+/**
+ * Référence réactive pour le niveau d'eau actuel
+ * Nécessaire car useWaterLevelChart attend une ref, pas une prop directement
+ */
+const currentWaterLevelRef = ref(props.currentWaterLevel);
 
-watch(() => props.currentWaterLevel, updateChartData, { immediate: true });
+// Utilisation du composable useWaterLevelChart
+const { chartRef, chartData, updateChart } = useWaterLevelChart(currentWaterLevelRef);
 
-onMounted(() => {
-  updateChartData();
-});
+/**
+ * Options du graphique, créées à partir des props min et max
+ */
+const chartOptions = createChartOptions(props.maxWaterLevel, props.minWaterLevel);
+
+/**
+ * Observe les changements de la prop currentWaterLevel
+ * Met à jour currentWaterLevelRef et le graphique en conséquence
+ */
+watch(() => props.currentWaterLevel, (newValue) => {
+  currentWaterLevelRef.value = newValue;
+  updateChart();
+}, { immediate: true });
 </script>
 
 <style scoped>
