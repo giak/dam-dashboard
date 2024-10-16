@@ -1,0 +1,41 @@
+graph TD
+    %% Observables
+    DamState[DamState Observable<br><b>useDam.ts</b>] -->|map| CurrentWaterLevel[CurrentWaterLevel Observable<br><b>useDam.ts</b>]
+    DamState -->|map| OutflowRate[OutflowRate Observable<br><b>useDam.ts</b>]
+    DamState -->|map| InflowRate[InflowRate Observable<br><b>useDam.ts</b>]
+    ErrorSubject[Error Subject<br><b>errorHandlingService.ts</b>] -->|asObservable| ErrorObservable[Error Observable<br><b>errorHandlingService.ts</b>]
+
+    %% Operators and Transformations
+    CurrentWaterLevel -->|distinctUntilChanged| DistinctWaterLevel[Distinct Water Level<br><b>useDam.ts</b>]
+    OutflowRate -->|distinctUntilChanged| DistinctOutflow[Distinct Outflow<br><b>useDam.ts</b>]
+    InflowRate -->|distinctUntilChanged| DistinctInflow[Distinct Inflow<br><b>useDam.ts</b>]
+
+    %% Combine Latest for System State
+    DistinctWaterLevel -->|combineLatest| SystemState[System State<br><b>useWaterSystem.ts</b>]
+    DistinctOutflow --> SystemState
+    DistinctInflow --> SystemState
+
+    %% Error Handling
+    SystemState -->|catchError| ErrorHandler[Error Handler<br><b>errorHandlerUtil.ts</b>]
+    ErrorHandler -->|emitError| ErrorSubject
+
+    %% Outputs to UI Components
+    SystemState -->|subscribe| WaterSystemDashboard[(Water System Dashboard<br><b>WaterSystemDashboard.vue</b>)]
+    DistinctWaterLevel -->|subscribe| WaterLevelChart[(Water Level Chart<br><b>WaterLevelChart.vue</b>)]
+    ErrorObservable -->|subscribe| ErrorNotification[(Error Notification<br><b>ErrorNotification.vue</b>)]
+
+    %% Triggers
+    UserInput[User Input<br><b>initializeDam</b><br><b>useWaterSystem.ts</b>] -.->|initializeDam| DamState
+    Interval[Interval Timer<br><b>damSimulation.ts</b>] -.->|updateDamState| DamState
+
+    %% Annotations
+    classDef annotation fill:#f9f,stroke:#333,stroke-width:2px;
+    class MapAnnotation,FilterAnnotation,CombineAnnotation annotation;
+
+    MapAnnotation[Map: Extract specific properties<br><b>useDam.ts</b>]
+    FilterAnnotation[Filter: Remove duplicate values<br><b>useDam.ts</b>]
+    CombineAnnotation[Combine: Merge latest values<br><b>useWaterSystem.ts</b>]
+
+    DamState --> MapAnnotation
+    DistinctWaterLevel --> FilterAnnotation
+    SystemState --> CombineAnnotation

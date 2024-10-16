@@ -1,0 +1,81 @@
+graph TD
+    subgraph Composables
+        useWaterSystem
+        useDam
+        useWaterLevelChart
+    end
+
+    subgraph Services
+        damSimulation
+        errorHandlingService
+        loggingService
+    end
+
+    subgraph Utilitaires
+        errorHandlerUtil
+    end
+
+    subgraph Domaine
+        DamInterface
+    end
+
+    subgraph Composants
+        WaterSystemDashboard
+        DamComponent
+        WaterLevelChart
+        ErrorNotification
+        GlobalErrorHandler
+    end
+
+    useWaterSystem -->|utilise| damSimulation
+    useWaterSystem -->|utilise| errorHandlingService
+    useWaterSystem -->|utilise| loggingService
+    useWaterSystem -->|retourne| DamInterface
+
+    useDam -->|utilise| errorHandlingService
+    useDam -->|retourne| DamInterface
+
+    useWaterLevelChart -->|utilise| errorHandlerUtil
+
+    damSimulation -->|crée| DamInterface
+    errorHandlingService -->|émet| ErrorDataInterface
+
+    errorHandlerUtil -->|utilise| errorHandlingService
+
+    WaterSystemDashboard -->|utilise| useWaterSystem
+    WaterSystemDashboard -->|contient| DamComponent
+    WaterSystemDashboard -->|utilise| loggingService
+
+    DamComponent -->|utilise| DamInterface
+    DamComponent -->|contient| WaterLevelChart
+
+    WaterLevelChart -->|utilise| useWaterLevelChart
+
+    ErrorNotification -->|utilise| errorHandlingService
+
+    GlobalErrorHandler -->|utilise| errorHandlingService
+    GlobalErrorHandler -->|contient| ErrorNotification
+
+    subgraph Décorateurs
+        errorHandler
+    end
+
+    errorHandler -->|utilise| errorHandlingService
+
+    subgraph Configuration
+        browserConfig
+    end
+
+    useWaterSystem -->|utilise| browserConfig
+    useDam -->|utilise| browserConfig
+    damSimulation -->|utilise| browserConfig
+
+    subgraph Tests
+        WaterSystemDashboard.spec
+        useWaterSystem.spec
+        useDam.spec
+    end
+
+    WaterSystemDashboard.spec -->|teste| WaterSystemDashboard
+    useWaterSystem.spec -->|teste| useWaterSystem
+    useDam.spec -->|teste| useDam
