@@ -1,7 +1,9 @@
 import { browserConfig } from '@config/browserEnv';
 import { calculateNetFlow, calculateNewWaterLevel, calculateWaterLevelChange, simulateFlowRate } from '@domain/dam';
+import { errorHandlingService } from '@services/errorHandlingService';
 import type { DamInterface, DamUpdateInterface } from '@type/dam/DamInterface';
-import { BehaviorSubject, Observable, distinctUntilChanged, interval, map, shareReplay } from 'rxjs';
+import { withErrorHandling } from '@utils/errorHandlerUtil';
+import { BehaviorSubject, Observable, catchError, distinctUntilChanged, interval, map, shareReplay, throwError } from 'rxjs';
 
 /**
  * Fonction composable pour gérer l'état et les opérations d'un barrage.
@@ -21,6 +23,15 @@ export function useDam(initialData: DamInterface) {
   const currentWaterLevel$: Observable<number> = damState$.pipe(
     map(state => state.currentWaterLevel),
     distinctUntilChanged(),
+    catchError(err => {
+      errorHandlingService.emitError({
+        message: `Erreur lors de la récupération du niveau d'eau: ${err instanceof Error ? err.message : String(err)}`,
+        code: 'WATER_LEVEL_ERROR',
+        timestamp: Date.now(),
+        context: 'useDam.currentWaterLevel$'
+      });
+      return throwError(() => err);
+    }),
     shareReplay(1)
   );
 
@@ -31,6 +42,15 @@ export function useDam(initialData: DamInterface) {
   const outflowRate$: Observable<number> = damState$.pipe(
     map(state => state.outflowRate),
     distinctUntilChanged(),
+    catchError(err => {
+      errorHandlingService.emitError({
+        message: `Erreur lors de la récupération du débit sortant: ${err instanceof Error ? err.message : String(err)}`,
+        code: 'OUTFLOW_RATE_ERROR',
+        timestamp: Date.now(),
+        context: 'useDam.outflowRate$'
+      });
+      return throwError(() => err);
+    }),
     shareReplay(1)
   );
 
@@ -41,6 +61,15 @@ export function useDam(initialData: DamInterface) {
   const inflowRate$: Observable<number> = damState$.pipe(
     map(state => state.inflowRate),
     distinctUntilChanged(),
+    catchError(err => {
+      errorHandlingService.emitError({
+        message: `Erreur lors de la récupération du débit entrant: ${err instanceof Error ? err.message : String(err)}`,
+        code: 'INFLOW_RATE_ERROR',
+        timestamp: Date.now(),
+        context: 'useDam.inflowRate$'
+      });
+      return throwError(() => err);
+    }),
     shareReplay(1)
   );
 
@@ -52,14 +81,9 @@ export function useDam(initialData: DamInterface) {
    * @param {number} timeInterval - Intervalle de temps pour la mise à jour en secondes
    * @returns {DamInterface} État mis à jour du barrage
    */
-  const updateDamState = (currentState: DamInterface, timeInterval: number): DamInterface => {
-    // Calcule le débit net (entrée - sortie)
+  const updateDamState = withErrorHandling((currentState: DamInterface, timeInterval: number): DamInterface => {
     const netFlow = calculateNetFlow(currentState.inflowRate, currentState.outflowRate);
-    
-    // Calcule le changement de niveau d'eau basé sur le débit net et l'intervalle de temps
     const waterLevelChange = calculateWaterLevelChange(netFlow, timeInterval, browserConfig.damSurfaceArea);
-    
-    // Calcule le nouveau niveau d'eau, en s'assurant qu'il reste dans les limites min et max
     const newWaterLevel = calculateNewWaterLevel(
       currentState.currentWaterLevel,
       waterLevelChange,
@@ -67,7 +91,6 @@ export function useDam(initialData: DamInterface) {
       currentState.maxWaterLevel
     );
 
-    // Retourne l'état mis à jour avec le nouveau niveau d'eau et les débits simulés
     return {
       ...currentState,
       currentWaterLevel: newWaterLevel,
@@ -75,7 +98,7 @@ export function useDam(initialData: DamInterface) {
       outflowRate: simulateFlowRate(currentState.outflowRate, browserConfig.maxFlowRateChange),
       lastUpdated: new Date(),
     };
-  };
+  }, 'useDam.updateDamState');
 
   /**
    * Démarre la simulation des changements de niveau d'eau du barrage.
@@ -83,16 +106,15 @@ export function useDam(initialData: DamInterface) {
    * 
    * @returns {Function} Une fonction pour arrêter la simulation
    */
-  const startSimulation = () => {
+  const startSimulation = withErrorHandling(() => {
     const subscription = interval(browserConfig.updateInterval).subscribe(() => {
       const currentState = damState$.getValue();
       const updatedState = updateDamState(currentState, browserConfig.updateInterval / 1000);
       damState$.next(updatedState);
     });
 
-    // Retourne une fonction pour arrêter la simulation en se désabonnant de l'intervalle
     return () => subscription.unsubscribe();
-  };
+  }, 'useDam.startSimulation');
 
   /**
    * Met à jour des propriétés spécifiques de l'état du barrage.
@@ -100,18 +122,18 @@ export function useDam(initialData: DamInterface) {
    * 
    * @param {DamUpdateInterface} update - Mise à jour partielle de l'état du barrage
    */
-  const updateDam = (update: DamUpdateInterface) => {
+  const updateDam = withErrorHandling((update: DamUpdateInterface) => {
     const currentState = damState$.getValue();
     damState$.next({ ...currentState, ...update });
-  };
+  }, 'useDam.updateDam');
 
   /**
    * Nettoie les ressources utilisées par la simulation du barrage.
    * Cette fonction complète l'observable damState$.
    */
-  const cleanup = () => {
+  const cleanup = withErrorHandling(() => {
     damState$.complete();
-  };
+  }, 'useDam.cleanup');
 
   // Retourne un objet avec tous les observables et fonctions nécessaires pour gérer le barrage
   return {
