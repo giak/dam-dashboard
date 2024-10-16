@@ -14,7 +14,8 @@
             "@utils/*": ["src/utils/*"],
             "@assets/*": ["src/assets/*"],
             "@config/*": ["src/config/*"],
-            "@type/*": ["src/types/*"]
+            "@type/*": ["src/types/*"],
+            "@services/*": ["src/services/*"]
         },
         "typeRoots": ["src/types", "node_modules/@types"],   
         "target": "ESNext",
