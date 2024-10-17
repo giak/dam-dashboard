@@ -156,6 +156,72 @@ graph TD
     SystemState --> CombineAnnotation
 ```
 
+2 schémas résumant les flux d'observables et de sujets :
+
+[![Schéma du système de barrage](docs/schema-dam.svg)](docs/schema-dam.svg)
+
+[![Schéma en graphe du système de barrage](docs/schema-dam-graph.svg)](docs/schema-dam-graph.svg)
+
+
+
+Schéma en code Mermaid
+
+
+```mermaid
+graph TD
+    %% Observables et Subjects
+    DamState[DamState BehaviorSubject<br><b>useDam.ts</b>] -->|map| CurrentWaterLevel[CurrentWaterLevel Observable<br><b>useDam.ts</b>]
+    DamState -->|map| OutflowRate[OutflowRate Observable<br><b>useDam.ts</b>]
+    DamState -->|map| InflowRate[InflowRate Observable<br><b>useDam.ts</b>]
+    ErrorSubject[Error Subject<br><b>errorHandlingService.ts</b>] -->|asObservable| ErrorObservable[Error Observable<br><b>errorHandlingService.ts</b>]
+    AggregatedInflow[AggregatedInflow Observable<br><b>useDam.ts</b>]
+
+    %% Operators and Transformations
+    CurrentWaterLevel -->|distinctUntilChanged| DistinctWaterLevel[Distinct Water Level<br><b>useDam.ts</b>]
+    OutflowRate -->|distinctUntilChanged| DistinctOutflow[Distinct Outflow<br><b>useDam.ts</b>]
+    InflowRate -->|distinctUntilChanged| DistinctInflow[Distinct Inflow<br><b>useDam.ts</b>]
+
+    %% Combine Latest for System State
+    DistinctWaterLevel -->|combineLatest| SystemState[System State Observable<br><b>useWaterSystem.ts</b>]
+    DistinctOutflow --> SystemState
+    DistinctInflow --> SystemState
+    AggregatedInflow --> SystemState
+
+    %% Error Handling
+    SystemState -->|catchError| ErrorHandler[Error Handler<br><b>errorHandlerUtil.ts</b>]
+    ErrorHandler -->|emitError| ErrorSubject
+
+    %% Outputs to UI Components
+    SystemState -->|subscribe| WaterSystemDashboard[(Water System Dashboard<br><b>WaterSystemDashboard.vue</b>)]
+    DistinctWaterLevel -->|subscribe| WaterLevelChart[(Water Level Chart<br><b>WaterLevelChart.vue</b>)]
+    ErrorObservable -->|subscribe| ErrorNotification[(Error Notification<br><b>ErrorNotification.vue</b>)]
+
+    %% Triggers
+    UserInput[User Input<br><b>initializeDam</b><br><b>useWaterSystem.ts</b>] -.->|initializeDam| DamState
+    Interval[Interval Timer<br><b>damSimulation.ts</b>] -.->|updateDamState| DamState
+
+    %% New Elements
+    GlacierState[GlacierState BehaviorSubject<br><b>useGlacier.ts</b>] -->|map| GlacierOutflowRate[GlacierOutflowRate Observable<br><b>useGlacier.ts</b>]
+    GlacierState -->|combineLatest| SystemState
+    TotalWaterLevel[TotalWaterLevel Observable<br><b>useWaterSystem.ts</b>] -->|subscribe| WaterSystemDashboard
+
+    %% Annotations
+    classDef annotation fill:#f9f,stroke:#333,stroke-width:2px;
+    class MapAnnotation,FilterAnnotation,CombineAnnotation,ShareReplayAnnotation annotation;
+
+    MapAnnotation[Map: Extract specific properties<br><b>useDam.ts, useGlacier.ts</b>]
+    FilterAnnotation[Filter: Remove duplicate values<br><b>useDam.ts, useGlacier.ts</b>]
+    CombineAnnotation[Combine: Merge latest values<br><b>useWaterSystem.ts</b>]
+    ShareReplayAnnotation[ShareReplay: Share last emission<br><b>useDam.ts, useGlacier.ts</b>]
+
+    DamState --> MapAnnotation
+    GlacierState --> MapAnnotation
+    DistinctWaterLevel --> FilterAnnotation
+    SystemState --> CombineAnnotation
+    CurrentWaterLevel --> ShareReplayAnnotation
+    GlacierOutflowRate --> ShareReplayAnnotation
+```
+
 ## Fonctionnalités
 
 - **Simulation de barrage** : Gestion dynamique des niveaux d'eau et des débits
