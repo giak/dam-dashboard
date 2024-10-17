@@ -12,7 +12,7 @@ enum LogLevel {
 /**
  * Interface décrivant la structure d'une entrée de log.
  */
-interface LogEntry {
+interface LogEntryInterface {
   level: LogLevel;
   message: string;
   timestamp: number;
@@ -26,7 +26,7 @@ interface LogEntry {
  * Il s'intègre également avec le service de gestion des erreurs pour consigner automatiquement les erreurs.
  */
 class LoggingService {
-  private logs: LogEntry[] = [];
+  private logs: LogEntryInterface[] = [];
 
   constructor() {
     this.subscribeToErrors();
@@ -89,7 +89,7 @@ class LoggingService {
    * Méthode interne pour consigner un log.
    */
   private log(level: LogLevel, message: string, context?: string, data?: any) {
-    const logEntry: LogEntry = {
+    const logEntry: LogEntryInterface = {
       level,
       message,
       timestamp: Date.now(),
@@ -104,7 +104,7 @@ class LoggingService {
   /**
    * Affiche le log dans la console avec un formatage approprié.
    */
-  private printLog(log: LogEntry) {
+  private printLog(log: LogEntryInterface) {
     const formattedMessage = `[${log.level}] ${log.timestamp} - ${log.context ? `[${log.context}] ` : ''}${log.message}`;
     switch (log.level) {
       case LogLevel.INFO:
@@ -128,7 +128,7 @@ class LoggingService {
    * const allLogs = loggingService.getLogs();
    * console.table(allLogs);
    */
-  public getLogs(): LogEntry[] {
+  public getLogs(): LogEntryInterface[] {
     return this.logs;
   }
 }

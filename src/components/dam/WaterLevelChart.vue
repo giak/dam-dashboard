@@ -1,16 +1,16 @@
 <template>
   <div class="water-level-chart">
-    <h3>Niveau d'eau: {{ formattedWaterLevel }} m</h3>
+    <h3 className="font-semibold text-gray-700">Niveau d'eau: {{ formattedWaterLevel }} m</h3>
     <Bar :data="chartData" :options="chartOptions" ref="chartRef" />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useWaterLevelChart } from '@/composables/useWaterLevelChart';
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Title, Tooltip } from 'chart.js';
 import { computed, ref, watch } from 'vue';
 import { Bar } from 'vue-chartjs';
 import { createChartOptions } from './waterLevelChartOptions';
-import { useWaterLevelChart } from '@/composables/useWaterLevelChart';
 
 // Enregistrement des composants nécessaires pour Chart.js
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
@@ -61,9 +61,6 @@ watch(() => props.currentWaterLevel, (newValue) => {
 
 <style scoped>
 .water-level-chart {
-  padding: 1rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
   height: 300px;
 }
 </style>
