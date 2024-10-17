@@ -1,6 +1,5 @@
 <template>
   <div class="water-level-chart">
-    <h3 className="font-semibold text-gray-700">Niveau d'eau: {{ formattedWaterLevel }} m</h3>
     <Bar :data="chartData" :options="chartOptions" ref="chartRef" />
   </div>
 </template>

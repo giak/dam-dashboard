@@ -81,7 +81,7 @@ export function useDam(initialData: DamInterface) {
    * @param {number} timeInterval - Intervalle de temps pour la mise à jour en secondes
    * @returns {DamInterface} État mis à jour du barrage
    */
-  const updateDamState = withErrorHandling((currentState: DamInterface, timeInterval: number): DamInterface => {
+  const updateDamState = (currentState: DamInterface, timeInterval: number): DamInterface => {
     const netFlow = calculateNetFlow(currentState.inflowRate, currentState.outflowRate);
     const waterLevelChange = calculateWaterLevelChange(netFlow, timeInterval, browserConfig.damSurfaceArea);
     const newWaterLevel = calculateNewWaterLevel(
@@ -98,7 +98,31 @@ export function useDam(initialData: DamInterface) {
       outflowRate: simulateFlowRate(currentState.outflowRate, browserConfig.maxFlowRateChange),
       lastUpdated: new Date(),
     };
-  }, 'useDam.updateDamState');
+  };
+
+  /**
+   * Met à jour des propriétés spécifiques de l'état du barrage.
+   * Cette fonction permet des mises à jour partielles de l'état du barrage.
+   * 
+   * @param {DamUpdateInterface} update - Mise à jour partielle de l'état du barrage
+   */
+  const updateDam = withErrorHandling((update: DamUpdateInterface): void => {
+    const currentState = damState$.getValue();
+    const newState = { ...currentState, ...update, lastUpdated: new Date() };
+    
+    // Add explicit error checking
+    if (isNaN(newState.currentWaterLevel)) {
+      errorHandlingService.emitError({
+        message: "Invalid water level update",
+        code: "WATER_LEVEL_ERROR",
+        timestamp: Date.now(),
+        context: "useDam.updateDam"
+      });
+      return; // Don't update state if there's an error
+    }
+    
+    damState$.next(newState);
+  }, 'useDam.updateDam');
 
   /**
    * Démarre la simulation des changements de niveau d'eau du barrage.
@@ -117,17 +141,6 @@ export function useDam(initialData: DamInterface) {
   }, 'useDam.startSimulation');
 
   /**
-   * Met à jour des propriétés spécifiques de l'état du barrage.
-   * Cette fonction permet des mises à jour partielles de l'état du barrage.
-   * 
-   * @param {DamUpdateInterface} update - Mise à jour partielle de l'état du barrage
-   */
-  const updateDam = withErrorHandling((update: DamUpdateInterface) => {
-    const currentState = damState$.getValue();
-    damState$.next({ ...currentState, ...update });
-  }, 'useDam.updateDam');
-
-  /**
    * Nettoie les ressources utilisées par la simulation du barrage.
    * Cette fonction complète l'observable damState$.
    */
@@ -137,7 +150,7 @@ export function useDam(initialData: DamInterface) {
 
   // Retourne un objet avec tous les observables et fonctions nécessaires pour gérer le barrage
   return {
-    damState$,
+    damState$: damState$.asObservable(),
     currentWaterLevel$,
     outflowRate$,
     inflowRate$,

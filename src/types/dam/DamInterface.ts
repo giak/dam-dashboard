@@ -2,9 +2,9 @@ export interface DamInterface {
   id: string;
   name: string;
   currentWaterLevel: number;
-  maxCapacity: number;
   maxWaterLevel: number;
   minWaterLevel: number;
+  maxCapacity: number;
   outflowRate: number;
   inflowRate: number;
   lastUpdated: Date;

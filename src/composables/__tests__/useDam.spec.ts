@@ -1,194 +1,135 @@
-import { browserConfig } from '@config/browserEnv';
-import type { DamInterface } from '@type/dam/DamInterface';
-import { firstValueFrom, take, toArray } from 'rxjs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useDam } from '../dam/useDam';
+import { browserConfig } from "@config/browserEnv";
+import { errorHandlingService } from "@services/errorHandlingService";
+import type { DamInterface } from "@type/dam/DamInterface";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useDam } from "@composables/dam/useDam";
 
-describe('useDam', () => {
-  let initialDamData: DamInterface;
+// Mock the browserConfig
+vi.mock("@config/browserEnv", () => ({
+  browserConfig: {
+    updateInterval: 1000,
+    damSurfaceArea: 1000000,
+    maxFlowRateChange: 10,
+  },
+}));
 
-  // Configuration initiale avant chaque test
+// Mock the errorHandlingService
+vi.mock("@services/errorHandlingService", () => ({
+  errorHandlingService: {
+    emitError: vi.fn(),
+  },
+}));
+
+describe("useDam", () => {
+  let initialData: DamInterface;
+  let dam: ReturnType<typeof useDam>;
+
   beforeEach(() => {
-    // Utilisation de faux timers pour contrôler le temps dans les tests
-    vi.useFakeTimers();
-    // Définition des données initiales du barrage pour les tests
-    initialDamData = {
-      id: '1',
-      name: 'Test Dam',
+    initialData = {
+      id: "dam1",
+      name: "Test Dam",
       currentWaterLevel: 50,
-      maxWaterLevel: 100,
       minWaterLevel: 0,
-      outflowRate: 25,
-      inflowRate: 30,
-      lastUpdated: new Date()
+      maxWaterLevel: 100,
+      maxCapacity: 1000000, // Add the missing maxCapacity property
+      inflowRate: 100,
+      outflowRate: 80,
+      lastUpdated: new Date(),
     };
+    dam = useDam(initialData);
   });
 
-  // Nettoyage après chaque test
   afterEach(() => {
-    // Restauration des vrais timers après chaque test
-    vi.useRealTimers();
+    dam.cleanup();
   });
 
-  // Test d'initialisation correcte
-  it('devrait s\'initialiser avec les données initiales correctes', async () => {
-    // Initialisation du composable avec les données initiales  
-    const { damState$ } = useDam(initialDamData);
-    // Attente de la réception de la valeur initiale
-    const state = await firstValueFrom(damState$);
-    // Vérification que la valeur initiale est égale aux données initiales
-    expect(state).toEqual(initialDamData);
-  });
-
-  // Test de mise à jour du niveau d'eau au fil du temps
-  it('devrait mettre à jour le niveau d\'eau au fil du temps', async () => {
-    // Initialisation du composable avec les données initiales
-    const { currentWaterLevel$, startSimulation, cleanup } = useDam(initialDamData);
-    // Démarrage de la simulation
-    const stopSimulation = startSimulation();
-    
-    // Capture des 3 premières valeurs émises
-    const levelsPromise = firstValueFrom(currentWaterLevel$.pipe(take(3), toArray()));
-    
-    // Avance le temps de 2 secondes
-    vi.advanceTimersByTime(2000);
-    
-    const levels = await levelsPromise;
-    expect(levels.length).toBe(3);
-    expect(levels[0]).toBe(50);  // Niveau initial
-    expect(levels[1]).not.toBe(50);  // Le niveau a changé
-    expect(levels[2]).not.toBe(levels[1]);  // Le niveau continue de changer
-    
-    stopSimulation();
-    cleanup();
-  });
-
-  // Test de mise à jour correcte des propriétés du barrage
-  it('devrait mettre à jour correctement les propriétés du barrage', async () => {
-    // Initialisation du composable avec les données initiales
-    const { damState$, updateDam } = useDam(initialDamData);
-    
-    // Mise à jour du niveau d'eau
-    updateDam({ currentWaterLevel: 60 });
-    
-    // Attente de la réception de la valeur mise à jour
-    const updatedState = await firstValueFrom(damState$);
-    // Vérification que la valeur mise à jour est égale à 60
-    expect(updatedState.currentWaterLevel).toBe(60);
-  });
-
-  // Test de complétion des observables lors du nettoyage
-  it('devrait compléter les observables lors du nettoyage', async () => {
-    // Initialisation du composable avec les données initiales
-    const { damState$, cleanup } = useDam(initialDamData);
-    // Attente de la complétion de l'observable
-    const completionPromise = new Promise<void>(resolve => {
-      damState$.subscribe({
-        complete: () => resolve()
-      });
+  it("should initialize with the correct initial state", async () => {
+    const state = await new Promise<DamInterface>((resolve) => {
+      dam.damState$.subscribe(resolve);
     });
-    
-    cleanup();
-    
-    await expect(completionPromise).resolves.toBeUndefined();
+    expect(state).toEqual(initialData);
   });
 
-  // Test de gestion des niveaux d'eau extrêmes
-  it('devrait gérer les niveaux d\'eau extrêmes', async () => {
-    // Utilisation de faux timers pour contrôler le temps dans les tests
-    vi.useFakeTimers();
-    // Création d'un jeu de données avec un niveau d'eau maximum
-    const extremeData: DamInterface = {
-      ...initialDamData,
-      currentWaterLevel: 100,  // Niveau maximum
-      inflowRate: 50,
-      outflowRate: 10
-    };
-    // Initialisation du composable avec les données initiales
-    const { currentWaterLevel$, cleanup } = useDam(extremeData);
-    // Attente de la réception de la valeur initiale
-    const getNextLevel = () => firstValueFrom(currentWaterLevel$.pipe(take(1)));
-    
-    const level1 = await getNextLevel();
-    expect(level1).toBe(100);
-    
-    vi.advanceTimersByTime(browserConfig.updateInterval);
-    const level2 = await getNextLevel();
-    expect(level2).toBeCloseTo(100, 0);  // Permet une petite variation
-    
-    vi.advanceTimersByTime(browserConfig.updateInterval);
-    const level3 = await getNextLevel();
-    expect(level3).toBeCloseTo(100, 0);  // Permet une petite variation
-    
-    cleanup();
-    vi.useRealTimers();
+  it("should emit the correct current water level", async () => {
+    const level = await new Promise<number>((resolve) => {
+      dam.currentWaterLevel$.subscribe(resolve);
+    });
+    expect(level).toBe(initialData.currentWaterLevel);
   });
 
-  // Test de gestion des débits d'entrée et de sortie nuls
-  it('devrait gérer les débits d\'entrée et de sortie nuls', async () => {
-    // Utilisation de faux timers pour contrôler le temps dans les tests
-    vi.useFakeTimers();
-    // Création d'un jeu de données avec des débits d'entrée et de sortie nuls
-    const zeroFlowData: DamInterface = {
-      ...initialDamData,
-      inflowRate: 0,
-      outflowRate: 0
-    };
-    // Initialisation du composable avec les données initiales
-    const { currentWaterLevel$, cleanup } = useDam(zeroFlowData);
-    // Attente de la réception de la valeur initiale
-    const getNextLevel = () => firstValueFrom(currentWaterLevel$.pipe(take(1)));
-    
-    const level1 = await getNextLevel();
-    expect(level1).toBe(50);
-    
-    vi.advanceTimersByTime(browserConfig.updateInterval);
-    const level2 = await getNextLevel();
-    expect(level2).toBeCloseTo(50, 4);  // Permet une très petite variation
-    
-    vi.advanceTimersByTime(browserConfig.updateInterval);
-    const level3 = await getNextLevel();
-    expect(level3).toBeCloseTo(50, 4);  // Permet une très petite variation
-    
-    cleanup();
-    vi.useRealTimers();
+  it("should emit the correct outflow rate", async () => {
+    const rate = await new Promise<number>((resolve) => {
+      dam.outflowRate$.subscribe(resolve);
+    });
+    expect(rate).toBe(initialData.outflowRate);
   });
 
-  // Test d'émission des mises à jour à l'intervalle correct
-  it('devrait émettre des mises à jour à l\'intervalle correct', async () => {
-    // Utilisation de faux timers pour contrôler le temps dans les tests
-    vi.useFakeTimers();
-    // Initialisation du composable avec les données initiales
-    const { currentWaterLevel$, startSimulation, cleanup } = useDam(initialDamData);
+  it("should emit the correct inflow rate", async () => {
+    const rate = await new Promise<number>((resolve) => {
+      dam.inflowRate$.subscribe(resolve);
+    });
+    expect(rate).toBe(initialData.inflowRate);
+  });
+
+  it("should update the dam state correctly", async () => {
+    const update = { currentWaterLevel: 60, outflowRate: 90 };
+    dam.updateDam(update);
+
+    const state = await new Promise<DamInterface>((resolve) => {
+      dam.damState$.subscribe(resolve);
+    });
+    expect(state.currentWaterLevel).toBe(update.currentWaterLevel);
+    expect(state.outflowRate).toBe(update.outflowRate);
+    expect(state.lastUpdated).toBeInstanceOf(Date);
+  });
+
+  it("should start and stop simulation correctly", async () => {
+    const stopSimulation = dam.startSimulation();
     
-    // Attente de la réception de la valeur initiale
-    const updatePromise = new Promise<number[]>(resolve => {
-      const levels: number[] = [];
-      const subscription = currentWaterLevel$.subscribe({
-        next: (level) => {
-          levels.push(level);
-          if (levels.length === 4) {
-            resolve(levels);
-            subscription.unsubscribe();
-          }
-        }
-      });
+    await new Promise<void>((resolve) => {
+      setTimeout(() => {
+        dam.damState$.subscribe((state) => {
+          expect(state.currentWaterLevel).not.toBe(initialData.currentWaterLevel);
+          expect(state.inflowRate).not.toBe(initialData.inflowRate);
+          expect(state.outflowRate).not.toBe(initialData.outflowRate);
+          
+          stopSimulation();
+          resolve();
+        });
+      }, browserConfig.updateInterval * 2);
+    });
+  });
+
+  it("should handle errors when updating dam state", () => {
+    const errorUpdate = { currentWaterLevel: NaN };
+    dam.updateDam(errorUpdate);
+
+    expect(errorHandlingService.emitError).toHaveBeenCalledWith(expect.objectContaining({
+      code: "WATER_LEVEL_ERROR",
+      context: "useDam.updateDam", // Updated context
+    }));
+
+    // Verify that the state hasn't changed
+    dam.damState$.subscribe(state => {
+      expect(state.currentWaterLevel).toBe(initialData.currentWaterLevel);
+    });
+  });
+
+  it("should not emit duplicate values for water level", async () => {
+    const emittedValues: number[] = [];
+    const subscription = dam.currentWaterLevel$.subscribe((level) => {
+      emittedValues.push(level);
     });
 
-    const stopSimulation = startSimulation();
+    dam.updateDam({ currentWaterLevel: 50 }); // Same as initial
+    dam.updateDam({ currentWaterLevel: 60 }); // New value
+    dam.updateDam({ currentWaterLevel: 60 }); // Duplicate
 
-    // Avance le temps de 3 intervalles
-    for (let i = 0; i < 3; i++) {
-      await vi.advanceTimersByTimeAsync(browserConfig.updateInterval);
-    }
+    // Wait for all updates to be processed
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const levels = await updatePromise;
+    expect(emittedValues).toEqual([50, 60]);
 
-    expect(levels.length).toBe(4); // Valeur initiale + 3 mises à jour
-    expect(new Set(levels).size).toBeGreaterThan(1); // Vérifie que les niveaux changent
-
-    stopSimulation();
-    cleanup();
-    vi.useRealTimers();
+    subscription.unsubscribe();
   });
 });

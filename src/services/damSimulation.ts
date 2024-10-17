@@ -28,22 +28,40 @@ export function createDamSimulation(initialState: DamInterface): DamSimulationIn
       return; // Sortie anticipée si la valeur n'est pas valide
     }
 
-    const change = (Math.random() - 0.5) * 10;
-    loggingService.info('Water level change:', "DamSimulation", { change: change }); // Log pour le débogage
+    // Simuler les changements de débits
+    const inflowChange = (Math.random() - 0.5) * 2; // Change entre -1 et 1 m³/s
+    const outflowChange = (Math.random() - 0.5) * 2; // Change entre -1 et 1 m³/s
+
+    const newInflowRate = Math.max(0, currentState.inflowRate + inflowChange);
+    const newOutflowRate = Math.max(0, currentState.outflowRate + outflowChange);
+
+    // Calculer le changement net du niveau d'eau basé sur les débits
+    const netChange = (newInflowRate - newOutflowRate) / 100; // Diviser par 100 pour réduire l'impact
 
     const newWaterLevel = Math.max(
       currentState.minWaterLevel,
-      Math.min(currentState.currentWaterLevel + change, currentState.maxWaterLevel)
+      Math.min(currentState.currentWaterLevel + netChange, currentState.maxWaterLevel)
     );
-    loggingService.info('New water level:', "DamSimulation", { newWaterLevel: newWaterLevel }); // Log pour le débogage
 
     if (isNaN(newWaterLevel)) {
       loggingService.error('Calculated water level is NaN. Using current level.', "DamSimulation", { error: 'Calculated water level is NaN' });
       return; // Sortie anticipée si le nouveau niveau est NaN
     }
 
+    loggingService.info('New state:', "DamSimulation", {
+      waterLevel: newWaterLevel,
+      inflowRate: newInflowRate,
+      outflowRate: newOutflowRate
+    });
+
     currentWaterLevel.next(newWaterLevel);
-    damState.next({ ...currentState, currentWaterLevel: newWaterLevel, lastUpdated: new Date() });
+    damState.next({
+      ...currentState,
+      currentWaterLevel: newWaterLevel,
+      inflowRate: newInflowRate,
+      outflowRate: newOutflowRate,
+      lastUpdated: new Date()
+    });
   };
 
   const startSimulation = () => {
