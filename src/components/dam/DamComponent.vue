@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-white shadow-sm border border-gray-200 p-4 max-w-sm mx-auto">
+  <div class="bg-white shadow-sm border border-gray-200 p-4 max-w-sm">
     <h2 v-once class="text-2xl font-semibold mb-4 text-gray-800 border-b pb-1">{{ damState.name }}</h2>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
       <div class="space-y-2">

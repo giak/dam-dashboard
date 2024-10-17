@@ -1,15 +1,20 @@
 <template>
   <div class="water-system-dashboard">
     <h1 class="text-3xl font-bold mb-6">Tableau de bord du système d'eau</h1>
-    <DamComponent v-if="damState" :damState="damState" />
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <DamComponent v-if="damState" :damState="damState" />
+      <GlacierComponent v-if="glacierState" :glacierState="glacierState" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import DamComponent from '@components/dam/DamComponent.vue';
+import GlacierComponent from '@components/glacier/GlacierComponent.vue';
 import { useWaterSystem } from '@composables/useWaterSystem';
 import { loggingService } from '@services/loggingService';
 import type { DamInterface } from '@type/dam/DamInterface';
+import type { GlacierStateInterface } from '@services/glacierSimulation';
 import { Subscription } from 'rxjs';
 import { onMounted, onUnmounted, ref } from 'vue';
 
@@ -20,10 +25,16 @@ import { onMounted, onUnmounted, ref } from 'vue';
 const damState = ref<DamInterface | null>(null);
 
 /**
- * @description { initializeDam, systemState$, cleanup, error$ } is an object that contains the initializeDam function, the systemState$ observable, the cleanup function, and the error$ observable.
+ * @description glacierState is a ref that holds the glacier state.
+ * @type {Ref<GlacierStateInterface | null>}
+ */
+const glacierState = ref<GlacierStateInterface | null>(null);
+
+/**
+ * @description { initializeDam, initializeGlacier, systemState$, cleanup, error$ } is an object that contains the initializeDam function, the initializeGlacier function, the systemState$ observable, the cleanup function, and the error$ observable.
  * @type {Object}
  */
-const { initializeDam, systemState$, cleanup, error$ } = useWaterSystem();
+const { initializeDam, initializeGlacier, systemState$, cleanup, error$ } = useWaterSystem();
 
 /**
  * @description systemStateSubscription is a subscription to the systemState$ observable.
@@ -62,7 +73,20 @@ onMounted(() => {
     outflowRate: 25,
     inflowRate: 30,
     lastUpdated: new Date(),
-    maxCapacity: 100 // Ajout de la propriété manquante
+    maxCapacity: 100
+  };
+
+  /**
+   * @description initialGlacierData is the initial state of the glacier.
+   * @type {GlacierStateInterface}
+   */
+  const initialGlacierData: GlacierStateInterface = {
+    id: crypto.randomUUID(),
+    name: "Glacier principal",
+    meltRate: 0.5,
+    volume: 1000000,
+    outflowRate: 0.5,
+    lastUpdated: new Date()
   };
 
   /**
@@ -73,12 +97,20 @@ onMounted(() => {
   initializeDam(initialDamData);
 
   /**
+   * @description initializeGlacier is a function that initializes the glacier instance.
+   * @param {GlacierStateInterface} glacierData - The initial state of the glacier.
+   * @returns {void}
+   */
+  initializeGlacier(initialGlacierData);
+
+  /**
    * @description systemStateSubscription is a subscription to the systemState$ observable.
    * @type {Subscription}
    */
   systemStateSubscription = systemState$.subscribe({
     next: (state) => {
-      damState.value = state;
+      damState.value = state.dam;
+      glacierState.value = state.glacier;
       /**
        * @description loggingService.info is a logging service that logs information about the updated system state.
        * @param {string} message - The message to log.
