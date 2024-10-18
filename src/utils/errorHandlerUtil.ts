@@ -1,4 +1,5 @@
 import { errorHandlingService, type ErrorDataInterface } from "@services/errorHandlingService";
+import { throwError } from 'rxjs';
 
 /**
  * withErrorHandling est une fonction d'ordre supérieur qui enveloppe une fonction donnée
@@ -74,4 +75,22 @@ function handleError(error: Error, context: string): void {
   };
 
   errorHandlingService.emitError(errorData);
+}
+
+/**
+ * handleObservableError est une fonction interne qui traite les erreurs capturées
+ * en les formatant et en les émettant via le service de gestion des erreurs.
+ *
+ * @param {unknown} err - L'erreur capturée
+ * @param {string} code - Le code de l'erreur
+ * @param {string} context - Le contexte dans lequel l'erreur s'est produite
+ */
+export function handleObservableError(err: unknown, code: string, context: string) {
+  errorHandlingService.emitError({
+    message: `Erreur: ${err instanceof Error ? err.message : String(err)}`,
+    code,
+    timestamp: Date.now(),
+    context
+  });
+  return throwError(() => err);
 }

@@ -2,12 +2,21 @@ import { useWaterSystem } from '@composables/useWaterSystem';
 import { loggingService } from '@services/loggingService';
 import type { DamInterface } from '@type/dam/DamInterface';
 import { mount } from '@vue/test-utils';
-import { BehaviorSubject, Subject } from 'rxjs';
+import { BehaviorSubject, Subject, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import WaterSystemDashboard from '../WaterSystemDashboard.vue';
 
 // Mock des dépendances
-vi.mock('@/composables/useWaterSystem');
+vi.mock('@/composables/useWaterSystem', () => ({
+  useWaterSystem: vi.fn(() => ({
+    initializeDam: vi.fn(),
+    initializeGlacier: vi.fn(),
+    systemState$: of({ dam: null, glacier: null }),
+    totalWaterLevel$: of(0),
+    cleanup: vi.fn(),
+    error$: of(null),
+  })),
+}));
 vi.mock('@services/loggingService');
 vi.mock('vue-chartjs', () => ({
   Bar: {

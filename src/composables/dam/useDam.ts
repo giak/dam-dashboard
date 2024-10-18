@@ -1,9 +1,8 @@
 import { browserConfig } from '@config/browserEnv';
 import { calculateNetFlow, calculateNewWaterLevel, calculateWaterLevelChange, simulateFlowRate } from '@domain/dam';
-import { errorHandlingService } from '@services/errorHandlingService';
 import type { DamInterface, DamUpdateInterface } from '@type/dam/DamInterface';
-import { withErrorHandling } from '@utils/errorHandlerUtil';
-import { BehaviorSubject, Observable, combineLatest, catchError, distinctUntilChanged, map, shareReplay, throwError } from 'rxjs';
+import { withErrorHandling, handleObservableError } from '@utils/errorHandlerUtil';
+import { BehaviorSubject, Observable, combineLatest, catchError, distinctUntilChanged, map, shareReplay } from 'rxjs';
 import { createInflowAggregator, type InflowSourceInterface } from '@services/inflowAggregator';
 
 /**
@@ -26,15 +25,7 @@ export function useDam(initialData: DamInterface, inflowSources: InflowSourceInt
   const currentWaterLevel$: Observable<number> = damState$.pipe(
     map(state => state.currentWaterLevel),
     distinctUntilChanged(),
-    catchError(err => {
-      errorHandlingService.emitError({
-        message: `Erreur lors de la récupération du niveau d'eau: ${err instanceof Error ? err.message : String(err)}`,
-        code: 'WATER_LEVEL_ERROR',
-        timestamp: Date.now(),
-        context: 'useDam.currentWaterLevel$'
-      });
-      return throwError(() => err);
-    }),
+    catchError(err => handleObservableError(err, 'WATER_LEVEL_ERROR', 'useDam.currentWaterLevel$')),
     shareReplay(1)
   );
 
@@ -45,15 +36,7 @@ export function useDam(initialData: DamInterface, inflowSources: InflowSourceInt
   const outflowRate$: Observable<number> = damState$.pipe(
     map(state => state.outflowRate),
     distinctUntilChanged(),
-    catchError(err => {
-      errorHandlingService.emitError({
-        message: `Erreur lors de la récupération du débit sortant: ${err instanceof Error ? err.message : String(err)}`,
-        code: 'OUTFLOW_RATE_ERROR',
-        timestamp: Date.now(),
-        context: 'useDam.outflowRate$'
-      });
-      return throwError(() => err);
-    }),
+    catchError(err => handleObservableError(err, 'OUTFLOW_RATE_ERROR', 'useDam.outflowRate$')),
     shareReplay(1)
   );
 
@@ -95,15 +78,8 @@ export function useDam(initialData: DamInterface, inflowSources: InflowSourceInt
     const currentState = damState$.getValue();
     const newState = { ...currentState, ...update, lastUpdated: new Date() };
     
-    // Add explicit error checking
     if (isNaN(newState.currentWaterLevel)) {
-      errorHandlingService.emitError({
-        message: "Invalid water level update",
-        code: "WATER_LEVEL_ERROR",
-        timestamp: Date.now(),
-        context: "useDam.updateDam"
-      });
-      return; // Don't update state if there's an error
+      throw new Error("Invalid water level update");
     }
     
     damState$.next(newState);
