@@ -1,9 +1,10 @@
 <template>
   <div class="water-system-dashboard">
     <h1 class="text-3xl font-bold mb-6">Tableau de bord du système d'eau</h1>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       <DamComponent v-if="damState" :damState="damState" />
       <GlacierComponent v-if="glacierState" :glacierState="glacierState" />
+      <RiverComponent v-if="riverState" :riverState="riverState" />
     </div>
   </div>
 </template>
@@ -11,10 +12,12 @@
 <script setup lang="ts">
 import DamComponent from '@components/dam/DamComponent.vue';
 import GlacierComponent from '@components/glacier/GlacierComponent.vue';
+import RiverComponent from '@components/river/RiverComponent.vue';
 import { useWaterSystem } from '@composables/useWaterSystem';
 import { loggingService } from '@services/loggingService';
 import type { DamInterface } from '@type/dam/DamInterface';
 import type { GlacierStateInterface } from '@services/glacierSimulation';
+import type { RiverStateInterface } from '@services/riverSimulation';
 import { Subscription } from 'rxjs';
 import { onMounted, onUnmounted, ref } from 'vue';
 
@@ -31,10 +34,16 @@ const damState = ref<DamInterface | null>(null);
 const glacierState = ref<GlacierStateInterface | null>(null);
 
 /**
- * @description { initializeDam, initializeGlacier, systemState$, cleanup, error$ } is an object that contains the initializeDam function, the initializeGlacier function, the systemState$ observable, the cleanup function, and the error$ observable.
+ * @description riverState is a ref that holds the river state.
+ * @type {Ref<RiverStateInterface | null>}
+ */
+const riverState = ref<RiverStateInterface | null>(null);
+
+/**
+ * @description { initializeDam, initializeGlacier, initializeRiver, systemState$, cleanup, error$ } is an object that contains the initializeDam function, the initializeGlacier function, the initializeRiver function, the systemState$ observable, the cleanup function, and the error$ observable.
  * @type {Object}
  */
-const { initializeDam, initializeGlacier, systemState$, cleanup, error$ } = useWaterSystem();
+const { initializeDam, initializeGlacier, initializeRiver, systemState$, cleanup, error$ } = useWaterSystem();
 
 /**
  * @description systemStateSubscription is a subscription to the systemState$ observable.
@@ -90,6 +99,18 @@ onMounted(() => {
   };
 
   /**
+   * @description initialRiverData is the initial state of the river.
+   * @type {RiverStateInterface}
+   */
+  const initialRiverData: RiverStateInterface = {
+    id: crypto.randomUUID(),
+    name: "Rivière principale",
+    flowRate: 20,
+    waterVolume: 500000,
+    lastUpdated: new Date()
+  };
+
+  /**
    * @description initializeDam is a function that initializes the dam instance.
    * @param {DamInterface} damData - The initial state of the dam.
    * @returns {void}
@@ -104,6 +125,13 @@ onMounted(() => {
   initializeGlacier(initialGlacierData);
 
   /**
+   * @description initializeRiver is a function that initializes the river instance.
+   * @param {RiverStateInterface} riverData - The initial state of the river.
+   * @returns {void}
+   */
+  initializeRiver(initialRiverData);
+
+  /**
    * @description systemStateSubscription is a subscription to the systemState$ observable.
    * @type {Subscription}
    */
@@ -111,6 +139,7 @@ onMounted(() => {
     next: (state) => {
       damState.value = state.dam;
       glacierState.value = state.glacier;
+      riverState.value = state.river;
       /**
        * @description loggingService.info is a logging service that logs information about the updated system state.
        * @param {string} message - The message to log.

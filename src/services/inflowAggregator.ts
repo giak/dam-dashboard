@@ -1,8 +1,5 @@
-import { Observable, combineLatest, of } from 'rxjs';
-import { map, startWith, catchError } from 'rxjs/operators';
-import { errorHandlingService } from '@services/errorHandlingService';
-import { loggingService } from '@services/loggingService';
-import { withErrorHandling } from '@utils/errorHandlerUtil';
+import { Observable, merge, map, scan, catchError, of, BehaviorSubject, switchMap } from 'rxjs';
+import { loggingService } from './loggingService';
 
 export interface InflowSourceInterface {
   name: string;
@@ -11,52 +8,54 @@ export interface InflowSourceInterface {
 
 export interface AggregatedInflowInterface {
   totalInflow: number;
-  sources: { [key: string]: number };
+  sources: Record<string, number>;
 }
 
-export function createInflowAggregator(sources: InflowSourceInterface[]): Observable<AggregatedInflowInterface> {
-  const sourceObservables = sources.map(source => 
-    source.outflowRate$.pipe(
-      startWith(0),
-      catchError(error => {
-        errorHandlingService.emitError({
-          message: `Erreur dans la source d'afflux ${source.name}: ${error}`,
-          code: 'INFLOW_SOURCE_ERROR',
-          timestamp: Date.now(),
-          context: 'inflowAggregator'
-        });
-        return of(0);
-      })
-    )
-  );
+export function createInflowAggregator(initialSources: InflowSourceInterface[]): {
+  addSource: (source: InflowSourceInterface) => void,
+  removeSource: (name: string) => void,
+  aggregatedInflow$: Observable<AggregatedInflowInterface>
+} {
+  const sources$ = new BehaviorSubject<InflowSourceInterface[]>(initialSources);
 
-  return combineLatest(sourceObservables).pipe(
-    map(flows => {
-      const aggregatedInflow = withErrorHandling(() => {
-        const sourcesFlow: { [key: string]: number } = {};
-        let totalInflow = 0;
+  function addSource(source: InflowSourceInterface) {
+    const currentSources = sources$.getValue();
+    sources$.next([...currentSources, source]);
+  }
 
-        flows.forEach((flow, index) => {
-          const sourceName = sources[index].name;
-          sourcesFlow[sourceName] = flow;
-          totalInflow += flow;
-        });
+  function removeSource(name: string) {
+    const currentSources = sources$.getValue();
+    sources$.next(currentSources.filter(s => s.name !== name));
+  }
 
-        loggingService.info('Inflow aggregated', 'inflowAggregator', { totalInflow, sources: sourcesFlow });
+  const aggregatedInflow$ = sources$.pipe(
+    switchMap(sources => {
+      const sourceObservables = sources.map(source => 
+        source.outflowRate$.pipe(
+          map(rate => ({ name: source.name, rate }))
+        )
+      );
 
-        return { totalInflow, sources: sourcesFlow };
-      }, 'inflowAggregator.aggregateInflow')();
+      return merge(...sourceObservables).pipe(
+        scan((aggregated: AggregatedInflowInterface, current) => {
+          aggregated.sources[current.name] = current.rate;
+          aggregated.totalInflow = Object.values(aggregated.sources).reduce((sum, rate) => sum + rate, 0);
+          
+          loggingService.info('Inflow aggregated', 'inflowAggregator', { 
+            totalInflow: aggregated.totalInflow, 
+            sources: aggregated.sources 
+          });
 
-      return aggregatedInflow;
-    }),
-    catchError(error => {
-      errorHandlingService.emitError({
-        message: `Erreur lors de l'agrégation des afflux: ${error}`,
-        code: 'INFLOW_AGGREGATION_ERROR',
-        timestamp: Date.now(),
-        context: 'inflowAggregator'
-      });
-      return of({ totalInflow: 0, sources: {} });
+          return aggregated;
+        }, { totalInflow: 0, sources: {} }),
+        map(aggregated => ({ ...aggregated })), // Create a new object to ensure change detection
+        catchError((error) => {
+          loggingService.error('Error in inflow aggregation', 'inflowAggregator', { error });
+          return of({ totalInflow: 0, sources: {} });
+        })
+      );
     })
   );
+
+  return { addSource, removeSource, aggregatedInflow$ };
 }

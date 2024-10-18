@@ -1,129 +1,108 @@
-import { createDamSimulation, type DamSimulationInterface } from '@services/damSimulation';
-import { errorHandlingService } from '@services/errorHandlingService';
+import { useDam } from '@composables/dam/useDam';
+import { useGlacier } from '@composables/glacier/useGlacier';
+import { useRiver } from '@composables/river/useRiver';
 import type { GlacierStateInterface } from '@services/glacierSimulation';
-import { createInflowAggregator, type InflowSourceInterface } from '@services/inflowAggregator';
+import { createInflowAggregator } from '@services/inflowAggregator';
 import { loggingService } from '@services/loggingService';
+import type { RiverStateInterface } from '@services/riverSimulation';
 import type { DamInterface } from '@type/dam/DamInterface';
-import { withErrorHandling } from '@utils/errorHandlerUtil';
-import { BehaviorSubject, Observable, combineLatest, of } from 'rxjs';
-import { catchError, distinctUntilChanged, map, shareReplay, switchMap, take } from 'rxjs/operators';
-import { useGlacier, type UseGlacierReturnInterface } from './glacier/useGlacier';
+import { BehaviorSubject, combineLatest, of, Subject } from 'rxjs';
+import { catchError, map, shareReplay, switchMap } from 'rxjs/operators';
 
-// Interfaces
-interface WaterSystemState {
-  dam: DamInterface | null;
-  glacier: GlacierStateInterface | null;
-}
+export function useWaterSystem() {
+  let damSimulation: ReturnType<typeof useDam> | null = null;
+  let glacierSimulation: ReturnType<typeof useGlacier> | null = null;
+  let riverSimulation: ReturnType<typeof useRiver> | null = null;
 
-interface WaterSystemReturnInterface {
-  initializeDam: (damData: DamInterface) => void;
-  initializeGlacier: (glacierData: GlacierStateInterface) => void;
-  systemState$: Observable<WaterSystemState>;
-  totalWaterLevel$: Observable<number>;
-  cleanup: () => void;
-  error$: Observable<string | null>;
-}
+  const damState$ = new BehaviorSubject<DamInterface | null>(null);
+  const glacierState$ = new BehaviorSubject<GlacierStateInterface | null>(null);
+  const riverState$ = new BehaviorSubject<RiverStateInterface | null>(null);
+  const error$ = new Subject<string | null>();
 
-/**
- * Crée un observable d'erreur à partir du service de gestion des erreurs.
- * @returns Observable<string | null>
- */
-const createErrorObservable = () => 
-  errorHandlingService.getErrorObservable().pipe(
-    map(errorData => errorData ? `${errorData.context}: ${errorData.message}` : null),
-    shareReplay(1)
-  );
+  const { addSource, removeSource, aggregatedInflow$ } = createInflowAggregator([]);
 
-/**
- * Crée un observable de l'état du système d'eau.
- * @param damSimulation$ Observable de la simulation du barrage
- * @param glacier$ Observable de la simulation du glacier
- * @returns Observable<WaterSystemState>
- */
-const createSystemStateObservable = (
-  damSimulation$: BehaviorSubject<DamSimulationInterface | null>,
-  glacier$: BehaviorSubject<UseGlacierReturnInterface | null>
-): Observable<WaterSystemState> => 
-  combineLatest([
-    damSimulation$.pipe(switchMap(simulation => simulation ? simulation.damState$ : of(null))),
-    glacier$.pipe(switchMap(glacierInstance => glacierInstance ? glacierInstance.glacierState$ : of(null)))
+  function initializeDam(initialData: DamInterface) {
+    damSimulation = useDam(initialData, aggregatedInflow$);
+    damSimulation.damState$.subscribe(damState$);
+    damSimulation.startSimulation();
+
+    loggingService.info('Dam simulation initialized', 'useWaterSystem.initializeDam', { damId: initialData.id });
+  }
+
+  function initializeGlacier(initialData: GlacierStateInterface) {
+    glacierSimulation = useGlacier(initialData);
+    glacierSimulation.glacierState$.subscribe(glacierState$);
+    glacierSimulation.startSimulation();
+
+    addSource({ name: 'Glacier', outflowRate$: glacierSimulation.outflowRate$ });
+
+    if (damSimulation) {
+      // Réinitialiser le barrage avec la nouvelle source d'eau
+      initializeDam(damState$.getValue()!);
+    }
+
+    loggingService.info('Glacier simulation initialized', 'useWaterSystem.initializeGlacier', { glacierId: initialData.id });
+  }
+
+  function initializeRiver(initialData: RiverStateInterface) {
+    riverSimulation = useRiver(initialData);
+    riverSimulation.riverState$.subscribe(riverState$);
+    riverSimulation.startSimulation();
+
+    addSource({ name: 'River', outflowRate$: riverSimulation.outflowRate$ });
+
+    if (damSimulation) {
+      // Réinitialiser le barrage avec la nouvelle source d'eau
+      initializeDam(damState$.getValue()!);
+    }
+
+    loggingService.info('River simulation initialized', 'useWaterSystem.initializeRiver', { riverId: initialData.id });
+  }
+
+  const systemState$ = combineLatest([
+    damState$,
+    glacierState$,
+    riverState$
   ]).pipe(
-    map(([damState, glacierState]) => ({ dam: damState, glacier: glacierState })),
+    map(([dam, glacier, river]) => ({ dam, glacier, river })),
     catchError(err => {
-      errorHandlingService.emitError({
-        message: `Erreur de l'état du système: ${err instanceof Error ? err.message : String(err)}`,
-        code: 'SYSTEM_STATE_ERROR',
-        timestamp: Date.now(),
-        context: 'useWaterSystem.systemState$'
-      });
-      return of({ dam: null, glacier: null });
+      loggingService.error('Error in system state', 'useWaterSystem.systemState$', { error: err });
+      error$.next(`Error in system state: ${err.message}`);
+      return of({ dam: null, glacier: null, river: null });
     }),
     shareReplay(1)
   );
 
-/**
- * Hook personnalisé pour gérer le système d'eau.
- * @returns WaterSystemReturnInterface
- */
-export function useWaterSystem(): WaterSystemReturnInterface {
-  const damSimulation$ = new BehaviorSubject<DamSimulationInterface | null>(null);
-  const glacier$ = new BehaviorSubject<UseGlacierReturnInterface | null>(null);
-  const error$ = createErrorObservable();
-
-  const initializeDam = withErrorHandling((damData: DamInterface): void => {
-    const glacierInstance = glacier$.getValue();
-    const inflowSources: InflowSourceInterface[] = glacierInstance 
-      ? [{ name: 'Glacier', outflowRate$: glacierInstance.outflowRate$ }]
-      : [];
-    
-    const aggregatedInflow$ = createInflowAggregator(inflowSources);
-    const simulation = createDamSimulation(damData);
-    damSimulation$.next(simulation);
-    simulation.startSimulation();
-    loggingService.info('Dam simulation initialized', 'useWaterSystem.initializeDam', { damId: damData.id });
-  }, 'useWaterSystem.initializeDam');
-
-  const initializeGlacier = withErrorHandling((glacierData: GlacierStateInterface): void => {
-    const glacierInstance = useGlacier(glacierData);
-    glacier$.next(glacierInstance);
-    glacierInstance.startSimulation();
-    loggingService.info('Glacier simulation initialized', 'useWaterSystem.initializeGlacier', { glacierId: glacierData.id });
-    
-    // Toujours réinitialiser le barrage
-    const currentDamSimulation = damSimulation$.getValue();
-    if (currentDamSimulation) {
-      currentDamSimulation.damState$.pipe(take(1)).subscribe(damState => {
-        if (damState) {
-          // Forcer la réinitialisation du barrage
-          damSimulation$.next(null);
-          initializeDam(damState);
-        }
-      });
-    }
-  }, 'useWaterSystem.initializeGlacier');
-
-  const systemState$ = createSystemStateObservable(damSimulation$, glacier$);
-
-  const totalWaterLevel$: Observable<number> = systemState$.pipe(
-    map(({ dam }) => dam ? dam.currentWaterLevel : 0),
-    distinctUntilChanged(),
+  const totalWaterLevel$ = damState$.pipe(
+    switchMap(damState => 
+      damState ? of(damState.currentWaterLevel) : of(0)
+    ),
     catchError(err => {
-      errorHandlingService.emitError({
-        message: `Erreur du niveau d'eau: ${err instanceof Error ? err.message : String(err)}`,
-        code: 'WATER_LEVEL_ERROR',
-        timestamp: Date.now(),
-        context: 'useWaterSystem.totalWaterLevel$'
-      });
+      loggingService.error('Error in total water level', 'useWaterSystem.totalWaterLevel$', { error: err });
+      error$.next(`Error in total water level: ${err.message}`);
       return of(0);
     }),
     shareReplay(1)
   );
 
-  const cleanup = withErrorHandling((): void => {
-    [damSimulation$.getValue(), glacier$.getValue()].forEach(instance => instance?.cleanup());
-    [damSimulation$, glacier$].forEach(subject => subject.complete());
+  function cleanup() {
+    damSimulation?.cleanup();
+    glacierSimulation?.cleanup();
+    riverSimulation?.cleanup();
+    damState$.complete();
+    glacierState$.complete();
+    riverState$.complete();
+    error$.complete();
     loggingService.info('Water system cleaned up', 'useWaterSystem.cleanup');
-  }, 'useWaterSystem.cleanup');
+  }
 
-  return { initializeDam, initializeGlacier, systemState$, totalWaterLevel$, cleanup, error$ };
+  return {
+    initializeDam,
+    initializeGlacier,
+    initializeRiver,
+    systemState$,
+    totalWaterLevel$,
+    cleanup,
+    error$
+  };
 }
