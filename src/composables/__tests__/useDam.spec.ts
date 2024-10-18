@@ -1,9 +1,8 @@
-import { browserConfig } from "@config/browserEnv";
-import { errorHandlingService } from "@services/errorHandlingService";
-import type { DamInterface } from "@type/dam/DamInterface";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useDam } from "@composables/dam/useDam";
-import { of } from 'rxjs';
+import { browserConfig } from "@config/browserEnv";
+import type { DamInterface } from "@type/dam/DamInterface";
+import { map, of, take } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the browserConfig
 vi.mock("@config/browserEnv", () => ({
@@ -28,6 +27,11 @@ vi.mock('@services/loggingService', () => ({
     error: vi.fn(),
     warn: vi.fn(),
   },
+}));
+
+// Update the inflow aggregator mock to return an observable that completes after emitting once
+vi.mock('@services/inflowAggregator', () => ({
+  createInflowAggregator: vi.fn(() => of({ totalInflow: 150 }).pipe(take(1))),
 }));
 
 describe("useDam", () => {
@@ -100,31 +104,46 @@ describe("useDam", () => {
     vi.useFakeTimers();
     const stopSimulation = dam.startSimulation();
     
-    // Avançons le temps de plusieurs intervalles pour s'assurer que la simulation a le temps de s'exécuter
-    for (let i = 0; i < 5; i++) {
-      await vi.advanceTimersByTimeAsync(browserConfig.updateInterval);
-    }
+    let simulationRunCount = 0;
+    const maxSimulationRuns = 5;
+    
+    const finalState = await new Promise<DamInterface>((resolve, reject) => {
+      const subscription = dam.damState$.pipe(
+        map(state => ({ ...state }))
+      ).subscribe({
+        next: (state) => {
+          simulationRunCount++;
+          console.log(`Simulation run ${simulationRunCount}:`, state);
+          
+          if (simulationRunCount >= maxSimulationRuns) {
+            subscription.unsubscribe();
+            resolve(state);
+          }
+        },
+        error: (err) => {
+          console.error("Error in simulation:", err);
+          reject(err);
+        }
+      });
 
-    const finalState = await new Promise<DamInterface>((resolve) => {
-      dam.damState$.subscribe(resolve);
+      // Advance time by several intervals
+      for (let i = 0; i < maxSimulationRuns; i++) {
+        vi.advanceTimersByTime(browserConfig.updateInterval);
+      }
     });
 
-    expect(finalState.currentWaterLevel).not.toBe(initialData.currentWaterLevel);
-    expect(finalState.inflowRate).not.toBe(initialData.inflowRate);
-    expect(finalState.outflowRate).not.toBe(initialData.outflowRate);
-    
     stopSimulation();
     vi.useRealTimers();
-  }, 10000); // Augmentons le timeout à 10 secondes
 
-  it("should handle errors when updating dam state", () => {
+    expect(simulationRunCount).toBe(maxSimulationRuns);
+    expect(finalState.currentWaterLevel).not.toBe(initialData.currentWaterLevel);
+    expect(finalState.inflowRate).toBe(150); // This should match the mocked totalInflow
+    expect(finalState.outflowRate).not.toBe(initialData.outflowRate);
+  }, 10000);
+
+  it("should throw an error when updating dam state with invalid data", () => {
     const errorUpdate = { currentWaterLevel: NaN };
-    dam.updateDam(errorUpdate);
-
-    expect(errorHandlingService.emitError).toHaveBeenCalledWith(expect.objectContaining({
-      code: "WATER_LEVEL_ERROR",
-      context: "useDam.updateDam", // Updated context
-    }));
+    expect(() => dam.updateDam(errorUpdate)).toThrow("Invalid water level update");
 
     // Verify that the state hasn't changed
     dam.damState$.subscribe(state => {
@@ -134,19 +153,25 @@ describe("useDam", () => {
 
   it("should not emit duplicate values for water level", async () => {
     const emittedValues: number[] = [];
-    const subscription = dam.currentWaterLevel$.subscribe((level) => {
-      emittedValues.push(level);
+    const promise = new Promise<void>((resolve, reject) => {
+      const subscription = dam.currentWaterLevel$.subscribe({
+        next: (level) => {
+          emittedValues.push(level);
+          if (emittedValues.length === 2) {
+            subscription.unsubscribe();
+            resolve();
+          }
+        },
+        error: reject,
+      });
     });
 
     dam.updateDam({ currentWaterLevel: 50 }); // Same as initial
     dam.updateDam({ currentWaterLevel: 60 }); // New value
     dam.updateDam({ currentWaterLevel: 60 }); // Duplicate
 
-    // Wait for all updates to be processed
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await promise;
 
     expect(emittedValues).toEqual([50, 60]);
-
-    subscription.unsubscribe();
   });
 });
