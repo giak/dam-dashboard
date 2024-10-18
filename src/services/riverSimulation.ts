@@ -18,7 +18,7 @@ export interface RiverSimulationInterface {
   cleanup: () => void;
 }
 
-const UPDATE_INTERVAL = 1000; // Mise à jour toutes les secondes
+const UPDATE_INTERVAL = 2000; // Mise à jour toutes les secondes
 const FLOW_RATE_VARIATION = 0.1; // Variation maximale du débit à chaque mise à jour
 
 export function createRiverSimulation(initialState: RiverStateInterface): RiverSimulationInterface {

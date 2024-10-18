@@ -20,10 +20,10 @@ export interface GlacierSimulationInterface {
   cleanup: () => void;
 }
 
-const UPDATE_INTERVAL = 1000; // Intervalle de mise à jour en millisecondes
+const UPDATE_INTERVAL = 2000; // Intervalle de mise à jour en millisecondes
 const TEMPERATURE_VARIATION = 5; // Variation de température en °C
 const BASE_TEMPERATURE = 0; // Température de base en °C
-const MELT_RATE_FACTOR = 0.1; // Facteur de fonte en m³/s/°C
+const MELT_RATE_FACTOR = 2; // Facteur de fonte en m³/s/°C
 
 export function createGlacierSimulation(initialState: GlacierStateInterface): GlacierSimulationInterface {
   const glacierState$ = new BehaviorSubject<GlacierStateInterface>(initialState);

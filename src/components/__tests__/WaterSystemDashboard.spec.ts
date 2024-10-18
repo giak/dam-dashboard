@@ -2,6 +2,7 @@ import { useWaterSystem } from '@composables/useWaterSystem';
 import { loggingService } from '@services/loggingService';
 import type { DamInterface } from '@type/dam/DamInterface';
 import type { GlacierStateInterface } from '@services/glacierSimulation';
+import type { RiverStateInterface } from '@services/riverSimulation';
 import { mount } from '@vue/test-utils';
 import { BehaviorSubject, Subject, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,7 +28,11 @@ describe('WaterSystemDashboard', () => {
 
   it('renders correctly with initial data', async () => {
     // Prépare les données mockées pour le test
-    const mockSystemState$ = new BehaviorSubject({
+    const mockSystemState$ = new BehaviorSubject<{
+      dam: DamInterface | null;
+      glacier: GlacierStateInterface | null;
+      river: RiverStateInterface | null;
+    }>({
       dam: {
         id: '1',
         name: 'Test Dam',
@@ -47,12 +52,14 @@ describe('WaterSystemDashboard', () => {
         outflowRate: 0.5,
         lastUpdated: new Date(),
       },
+      river: null,
     });
 
     // Mock le retour de useWaterSystem
     vi.mocked(useWaterSystem).mockReturnValue({
       initializeDam: vi.fn(),
       initializeGlacier: vi.fn(),
+      initializeRiver: vi.fn(),
       systemState$: mockSystemState$,
       totalWaterLevel$: new BehaviorSubject(50),
       cleanup: vi.fn(),
@@ -83,7 +90,8 @@ describe('WaterSystemDashboard', () => {
     vi.mocked(useWaterSystem).mockReturnValue({
       initializeDam: mockInitializeDam,
       initializeGlacier: mockInitializeGlacier,
-      systemState$: new BehaviorSubject({ dam: null, glacier: null }),
+      initializeRiver: vi.fn(),
+      systemState$: new BehaviorSubject({ dam: null, glacier: null, river: null }),
       totalWaterLevel$: new BehaviorSubject(0),
       cleanup: mockCleanup,
       error$: new Subject<string | null>(),
@@ -113,7 +121,11 @@ describe('WaterSystemDashboard', () => {
 
   it('updates dam and glacier state when systemState$ emits new value', async () => {
     // Prépare les données mockées pour le test
-    const mockSystemState$ = new BehaviorSubject({
+    const mockSystemState$ = new BehaviorSubject<{
+      dam: DamInterface | null;
+      glacier: GlacierStateInterface | null;
+      river: RiverStateInterface | null;
+    }>({
       dam: {
         id: '1',
         name: 'Test Dam',
@@ -133,12 +145,14 @@ describe('WaterSystemDashboard', () => {
         outflowRate: 0.5,
         lastUpdated: new Date(),
       },
+      river: null,
     });
 
     // Mock le retour de useWaterSystem
     vi.mocked(useWaterSystem).mockReturnValue({
       initializeDam: vi.fn(),
       initializeGlacier: vi.fn(),
+      initializeRiver: vi.fn(),
       systemState$: mockSystemState$,
       totalWaterLevel$: new BehaviorSubject(50),
       cleanup: vi.fn(),
@@ -153,8 +167,9 @@ describe('WaterSystemDashboard', () => {
 
     // Émet une nouvelle valeur pour systemState$
     mockSystemState$.next({
-      dam: { ...mockSystemState$.getValue().dam, currentWaterLevel: 75 },
-      glacier: { ...mockSystemState$.getValue().glacier, meltRate: 0.7 },
+      dam: { ...mockSystemState$.getValue().dam!, currentWaterLevel: 75 },
+      glacier: { ...mockSystemState$.getValue().glacier!, meltRate: 0.7 },
+      river: null,
     });
 
     // Attend que le composant soit mis à jour
@@ -173,13 +188,18 @@ describe('WaterSystemDashboard', () => {
   it('handles error in systemState$ subscription', async () => {
     // Active les timers simulés
     vi.useFakeTimers();
-    const mockSystemState$ = new Subject<{ dam: DamInterface | null; glacier: GlacierStateInterface | null }>();
+    const mockSystemState$ = new Subject<{
+      dam: DamInterface | null;
+      glacier: GlacierStateInterface | null;
+      river: RiverStateInterface | null;
+    }>();
     const mockError$ = new Subject<string | null>();
 
     // Mock le retour de useWaterSystem
     vi.mocked(useWaterSystem).mockReturnValue({
       initializeDam: vi.fn(),
       initializeGlacier: vi.fn(),
+      initializeRiver: vi.fn(),
       systemState$: mockSystemState$,
       totalWaterLevel$: new BehaviorSubject(0),
       cleanup: vi.fn(),
@@ -215,7 +235,8 @@ describe('WaterSystemDashboard', () => {
     vi.mocked(useWaterSystem).mockReturnValue({
       initializeDam: vi.fn(),
       initializeGlacier: vi.fn(),
-      systemState$: new BehaviorSubject({ dam: null, glacier: null }),
+      initializeRiver: vi.fn(),
+      systemState$: new BehaviorSubject({ dam: null, glacier: null, river: null }),
       totalWaterLevel$: new BehaviorSubject(0),
       cleanup: vi.fn(),
       error$: mockError$,

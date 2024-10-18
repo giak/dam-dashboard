@@ -3,7 +3,7 @@ import { calculateNetFlow, calculateNewWaterLevel, calculateWaterLevelChange, si
 import { type AggregatedInflowInterface } from '@services/inflowAggregator';
 import type { DamInterface, DamUpdateInterface } from '@type/dam/DamInterface';
 import { handleObservableError, withErrorHandling } from '@utils/errorHandlerUtil';
-import { BehaviorSubject, Observable, catchError, combineLatest, distinctUntilChanged, map, shareReplay, timer } from 'rxjs';
+import { BehaviorSubject, Observable, catchError, combineLatest, distinctUntilChanged, map, shareReplay } from 'rxjs';
 
 /**
  * Fonction composable pour gérer l'état et les opérations d'un barrage.
@@ -16,6 +16,7 @@ import { BehaviorSubject, Observable, catchError, combineLatest, distinctUntilCh
 export function useDam(initialData: DamInterface, aggregatedInflow$: Observable<AggregatedInflowInterface>) {
   // BehaviorSubject pour contenir et émettre l'état actuel du barrage
   const damState$ = new BehaviorSubject<DamInterface>(initialData);
+  let lastUpdateTime = Date.now();
 
   /**
    * Observable qui émet le niveau d'eau actuel du barrage.
@@ -57,10 +58,15 @@ export function useDam(initialData: DamInterface, aggregatedInflow$: Observable<
       currentState.minWaterLevel,
       currentState.maxWaterLevel
     );
-  
+
+    // Assurez-vous que le nouveau niveau d'eau est différent de l'ancien
+    const adjustedWaterLevel = newWaterLevel === currentState.currentWaterLevel 
+      ? newWaterLevel + 0.001 
+      : newWaterLevel;
+
     return {
       ...currentState,
-      currentWaterLevel: newWaterLevel,
+      currentWaterLevel: adjustedWaterLevel,
       inflowRate: totalInflow,
       outflowRate: simulateFlowRate(currentState.outflowRate, browserConfig.maxFlowRateChange),
       lastUpdated: new Date(),
@@ -84,6 +90,16 @@ export function useDam(initialData: DamInterface, aggregatedInflow$: Observable<
     damState$.next(newState);
   };
 
+  const simulateStep = (inflow: AggregatedInflowInterface) => {
+    const currentTime = Date.now();
+    const timeInterval = (currentTime - lastUpdateTime) / 1000; // Convert to seconds
+    lastUpdateTime = currentTime;
+
+    const currentState = damState$.getValue();
+    const updatedState = updateDamState(currentState, timeInterval, inflow.totalInflow);
+    damState$.next(updatedState);
+  };
+
   /**
    * Démarre la simulation des changements de niveau d'eau du barrage.
    * Cette fonction configure un intervalle pour mettre à jour régulièrement l'état du barrage.
@@ -91,20 +107,7 @@ export function useDam(initialData: DamInterface, aggregatedInflow$: Observable<
    * @returns {Function} Une fonction pour arrêter la simulation
    */
   const startSimulation = withErrorHandling(() => {
-    let lastUpdateTime = Date.now();
-    const subscription = combineLatest([
-      timer(0, browserConfig.updateInterval),
-      aggregatedInflow$
-    ]).subscribe(([_, inflow]) => {
-      const currentTime = Date.now();
-      const timeInterval = (currentTime - lastUpdateTime) / 1000; // Convert to seconds
-      lastUpdateTime = currentTime;
-
-      const currentState = damState$.getValue();
-      const updatedState = updateDamState(currentState, timeInterval, inflow.totalInflow);
-      damState$.next(updatedState);
-    });
-
+    const subscription = aggregatedInflow$.subscribe(simulateStep);
     return () => subscription.unsubscribe();
   }, 'useDam.startSimulation');
 
@@ -124,5 +127,7 @@ export function useDam(initialData: DamInterface, aggregatedInflow$: Observable<
     updateDam,
     startSimulation,
     cleanup,
+    // Exposer simulateStep pour les tests
+    _simulateStep: simulateStep
   };
 }
