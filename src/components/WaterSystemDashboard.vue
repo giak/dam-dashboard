@@ -5,6 +5,12 @@
       <DamComponent v-if="damState" :damState="damState" />
       <GlacierComponent v-if="glacierState" :glacierState="glacierState" />
       <RiverComponent v-if="riverState" :riverState="riverState" />
+      <MainWeatherStationComponent
+        v-if="mainWeatherState"
+        :id="mainWeatherState.id"
+        :name="mainWeatherState.name"
+        :subStationConfigs="mainWeatherState.subStations"
+      />
     </div>
   </div>
 </template>
@@ -13,13 +19,17 @@
 import DamComponent from '@components/dam/DamComponent.vue';
 import GlacierComponent from '@components/glacier/GlacierComponent.vue';
 import RiverComponent from '@components/river/RiverComponent.vue';
+import MainWeatherStationComponent from '@components/weather/MainWeatherStationComponent.vue';
 import { useWaterSystem } from '@composables/useWaterSystem';
 import { loggingService } from '@services/loggingService';
 import type { DamInterface } from '@type/dam/DamInterface';
 import type { GlacierStateInterface } from '@services/glacierSimulation';
 import type { RiverStateInterface } from '@services/riverSimulation';
+import type { MainWeatherStationInterface } from '@types/weather/WeatherStationInterface';
+import type { WeatherStationConfig } from '@/types/weather/WeatherStationInterface';
 import { Subscription } from 'rxjs';
 import { onMounted, onUnmounted, ref } from 'vue';
+import { isValidLatitude, isValidLongitude } from '@/types/weather/WeatherStationInterface';
 
 /**
  * @description damState is a ref that holds the dam state.
@@ -40,10 +50,16 @@ const glacierState = ref<GlacierStateInterface | null>(null);
 const riverState = ref<RiverStateInterface | null>(null);
 
 /**
- * @description { initializeDam, initializeGlacier, initializeRiver, systemState$, cleanup, error$ } is an object that contains the initializeDam function, the initializeGlacier function, the initializeRiver function, the systemState$ observable, the cleanup function, and the error$ observable.
+ * @description mainWeatherState is a ref that holds the main weather station state.
+ * @type {Ref<MainWeatherStationInterface | null>}
+ */
+const mainWeatherState = ref<MainWeatherStationInterface | null>(null);
+
+/**
+ * @description { initializeDam, initializeGlacier, initializeRiver, initializeMainWeatherStation, systemState$, cleanup, error$ } is an object that contains the initializeDam function, the initializeGlacier function, the initializeRiver function, the initializeMainWeatherStation function, the systemState$ observable, the cleanup function, and the error$ observable.
  * @type {Object}
  */
-const { initializeDam, initializeGlacier, initializeRiver, systemState$, cleanup, error$ } = useWaterSystem();
+const { initializeDam, initializeGlacier, initializeRiver, initializeMainWeatherStation, systemState$, cleanup, error$ } = useWaterSystem();
 
 /**
  * @description systemStateSubscription is a subscription to the systemState$ observable.
@@ -111,6 +127,31 @@ onMounted(() => {
   };
 
   /**
+   * @description initialWeatherStationData is the initial state of the main weather station.
+   * @type {MainWeatherStationInterface}
+   */
+  const initialWeatherStationData = {
+    id: crypto.randomUUID(),
+    name: "Station météo principale",
+    subStationConfigs: [
+      { 
+        id: crypto.randomUUID(), 
+        name: "Sous-station 1", 
+        latitude: isValidLatitude(45.5) ? 45.5 : 0, 
+        longitude: isValidLongitude(-73.5) ? -73.5 : 0, 
+        elevation: 100 
+      },
+      { 
+        id: crypto.randomUUID(), 
+        name: "Sous-station 2", 
+        latitude: isValidLatitude(46.8) ? 46.8 : 0, 
+        longitude: isValidLongitude(-71.2) ? -71.2 : 0, 
+        elevation: 200 
+      },
+    ] as WeatherStationConfig[]
+  };
+
+  /**
    * @description initializeDam is a function that initializes the dam instance.
    * @param {DamInterface} damData - The initial state of the dam.
    * @returns {void}
@@ -132,6 +173,15 @@ onMounted(() => {
   initializeRiver(initialRiverData);
 
   /**
+   * @description initializeMainWeatherStation is a function that initializes the main weather station instance.
+   * @param {string} id - The ID of the main weather station.
+   * @param {string} name - The name of the main weather station.
+   * @param {Array<WeatherStationConfig>} subStationConfigs - The sub-station configurations of the main weather station.
+   * @returns {void}
+   */
+  initializeMainWeatherStation(initialWeatherStationData.id, initialWeatherStationData.name, initialWeatherStationData.subStationConfigs);
+
+  /**
    * @description systemStateSubscription is a subscription to the systemState$ observable.
    * @type {Subscription}
    */
@@ -140,6 +190,7 @@ onMounted(() => {
       damState.value = state.dam;
       glacierState.value = state.glacier;
       riverState.value = state.river;
+      mainWeatherState.value = state.mainWeather;
       /**
        * @description loggingService.info is a logging service that logs information about the updated system state.
        * @param {string} message - The message to log.

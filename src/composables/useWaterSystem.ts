@@ -1,6 +1,8 @@
+import type { MainWeatherStationInterface, WeatherStationInterface } from '@/types/weather/WeatherStationInterface';
 import { useDam } from '@composables/dam/useDam';
 import { useGlacier } from '@composables/glacier/useGlacier';
 import { useRiver } from '@composables/river/useRiver';
+import { useMainWeatherStation } from '@composables/weather/useMainWeatherStation';
 import type { GlacierStateInterface } from '@services/glacierSimulation';
 import { createInflowAggregator } from '@services/inflowAggregator';
 import { loggingService } from '@services/loggingService';
@@ -13,14 +15,17 @@ export function useWaterSystem() {
   let damSimulation: ReturnType<typeof useDam> | null = null;
   let glacierSimulation: ReturnType<typeof useGlacier> | null = null;
   let riverSimulation: ReturnType<typeof useRiver> | null = null;
+  let mainWeatherStation: MainWeatherStationInterface | null = null;
 
   const damState$ = new BehaviorSubject<DamInterface | null>(null);
   const glacierState$ = new BehaviorSubject<GlacierStateInterface | null>(null);
   const riverState$ = new BehaviorSubject<RiverStateInterface | null>(null);
+  const mainWeatherState$ = new BehaviorSubject<MainWeatherStationInterface | null>(null);
   const error$ = new Subject<string | null>();
 
   const { addSource, removeSource, aggregatedInflow$ } = createInflowAggregator([]);
 
+  
   function initializeDam(initialData: DamInterface) {
     damSimulation = useDam(initialData, aggregatedInflow$);
     damSimulation.damState$.subscribe(damState$);
@@ -59,16 +64,29 @@ export function useWaterSystem() {
     loggingService.info('River simulation initialized', 'useWaterSystem.initializeRiver', { riverId: initialData.id });
   }
 
+  // Ajout pour la station météo principale
+  function initializeMainWeatherStation(
+    id: string,
+    name: string,
+    subStationConfigs: Array<Omit<WeatherStationInterface, 'weatherData$' | 'cleanup'>>
+  ) {
+    mainWeatherStation = useMainWeatherStation(id, name, subStationConfigs);
+    mainWeatherState$.next(mainWeatherStation);
+
+    loggingService.info('Main weather station initialized', 'useWaterSystem.initializeMainWeatherStation', { stationId: id });
+  }
+
   const systemState$ = combineLatest([
     damState$,
     glacierState$,
-    riverState$
+    riverState$,
+    mainWeatherState$
   ]).pipe(
-    map(([dam, glacier, river]) => ({ dam, glacier, river })),
+    map(([dam, glacier, river, mainWeather]) => ({ dam, glacier, river, mainWeather })),
     catchError(err => {
       loggingService.error('Error in system state', 'useWaterSystem.systemState$', { error: err });
       error$.next(`Error in system state: ${err.message}`);
-      return of({ dam: null, glacier: null, river: null });
+      return of({ dam: null, glacier: null, river: null, mainWeather: null });
     }),
     shareReplay(1)
   );
@@ -89,9 +107,11 @@ export function useWaterSystem() {
     damSimulation?.cleanup();
     glacierSimulation?.cleanup();
     riverSimulation?.cleanup();
+    mainWeatherStation?.subStations.forEach(station => station.cleanup());
     damState$.complete();
     glacierState$.complete();
     riverState$.complete();
+    mainWeatherState$.complete();
     error$.complete();
     loggingService.info('Water system cleaned up', 'useWaterSystem.cleanup');
   }
@@ -100,6 +120,7 @@ export function useWaterSystem() {
     initializeDam,
     initializeGlacier,
     initializeRiver,
+    initializeMainWeatherStation,
     systemState$,
     totalWaterLevel$,
     cleanup,
