@@ -19,7 +19,7 @@
         <div v-memo="[damState.outflowRate, previousDamState?.outflowRate]" class="border-l-2 border-green-500 pl-3">
           <p class="text-sm font-medium text-gray-500 mb-1">Débit sortant</p>
           <div class="flex items-center justify-between">
-            <p class="text-xl font-bold text-gray-600">{{ damState.outflowRate.toFixed(2) }} m³/s</p>
+            <p class="text-xl font-bold text-gray-600">{{ damState.outflowRate?.toFixed(2) ?? 'N/A' }} m³/s</p>
             <TrendIndicator
               :currentValue="damState.outflowRate"
               :previousValue="previousDamState?.outflowRate ?? null"

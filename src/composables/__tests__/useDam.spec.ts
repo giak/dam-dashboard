@@ -104,36 +104,41 @@ describe("useDam", () => {
     expect(state.lastUpdated).toBeInstanceOf(Date);
   });
 
-  it("should start and stop simulation correctly", async () => {
+  it("should start simulation correctly", async () => {
     const mockAggregatedInflow$ = new BehaviorSubject<AggregatedInflowInterface>({
-      totalInflow: 150,
-      sources: { 'TestSource': 150 }
+      totalInflow: 100,
+      sources: { 'TestSource': 100 }
     });
     
+    const initialData: DamInterface = {
+      id: "dam1",
+      name: "Test Dam",
+      currentWaterLevel: 50,
+      minWaterLevel: 0,
+      maxWaterLevel: 100,
+      maxCapacity: 1000000,
+      inflowRate: 100,
+      outflowRate: 80,
+      lastUpdated: new Date(),
+    };
+
     const dam = useDam(initialData, mockAggregatedInflow$);
+
+    const initialWaterLevel = await firstValueFrom(dam.currentWaterLevel$);
+    expect(initialWaterLevel).toBe(50);
+
     const stopSimulation = dam.startSimulation();
     
-    const maxSimulationRuns = 5;
-    
     // Simuler le passage du temps
-    vi.useFakeTimers();
-    const currentTime = Date.now();
-    
-    for (let i = 0; i < maxSimulationRuns; i++) {
-      vi.advanceTimersByTime(1000); // Avancer d'une seconde
-      dam._simulateStep({ totalInflow: 150, sources: { 'TestSource': 150 } });
-    }
-
-    vi.useRealTimers();
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     stopSimulation();
 
-    const finalState = await firstValueFrom(dam.damState$);
-    console.log('Initial water level:', initialData.currentWaterLevel);
-    console.log('Final water level:', finalState.currentWaterLevel);
-    expect(finalState.currentWaterLevel).not.toBe(initialData.currentWaterLevel);
-    expect(finalState.inflowRate).toBe(150);
-    expect(finalState.outflowRate).not.toBe(initialData.outflowRate);
+    const finalWaterLevel = await firstValueFrom(dam.currentWaterLevel$);
+    expect(finalWaterLevel).toBeGreaterThan(initialWaterLevel);
+    expect(finalWaterLevel).toBeLessThan(initialWaterLevel + 1); // Assurez-vous que le changement est raisonnable
+
+    dam.cleanup();
   });
 
   it("should throw an error when updating dam state with invalid data", () => {

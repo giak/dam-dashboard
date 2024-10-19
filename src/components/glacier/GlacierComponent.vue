@@ -6,7 +6,7 @@
         <div class="border-l-2 border-blue-500 pl-3">
           <p class="text-sm font-medium text-gray-500 mb-1">Volume actuel</p>
           <div class="flex items-center justify-between">
-            <p class="text-xl font-bold text-blue-600">{{ glacierState.volume.toFixed(2) }} m³</p>
+            <p class="text-xl font-bold text-blue-600">{{ glacierState.volume?.toFixed(2) ?? 'N/A' }} m³</p>
             <TrendIndicator
               :currentValue="glacierState.volume"
               :previousValue="previousVolume"

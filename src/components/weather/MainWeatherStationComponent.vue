@@ -40,12 +40,16 @@ import { computed } from 'vue';
 import WeatherDataDisplay from './WeatherDataDisplay.vue';
 
 interface PropsInterface {
-  id: string;
-  name: string;
-  subStationConfigs: Array<Omit<WeatherStationInterface, 'weatherData$' | 'cleanup'>>;
+  id?: string;
+  name?: string;
+  subStationConfigs?: Array<Omit<WeatherStationInterface, 'weatherData$' | 'cleanup'>>;
 }
 
-const props = defineProps<PropsInterface>();
+const props = withDefaults(defineProps<PropsInterface>(), {
+  id: '',
+  name: '',
+  subStationConfigs: () => []
+});
 
 const {
   id,

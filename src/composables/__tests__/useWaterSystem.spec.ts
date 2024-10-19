@@ -1,20 +1,34 @@
 import { useDam } from "@composables/dam/useDam";
 import { useGlacier } from "@composables/glacier/useGlacier";
 import { useRiver } from "@composables/river/useRiver";
+import { useMainWeatherStation } from "@composables/weather/useMainWeatherStation";
 import type { GlacierStateInterface } from "@services/glacierSimulation";
 import { createInflowAggregator } from "@services/inflowAggregator";
 import { loggingService } from "@services/loggingService";
 import type { RiverStateInterface } from "@services/riverSimulation";
 import type { DamInterface } from "@type/dam/DamInterface";
+import type { Latitude, Longitude, WeatherStationConfig, MainWeatherStationInterface } from "@/types/weather/WeatherStationInterface";
 import { BehaviorSubject, firstValueFrom, of } from "rxjs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useWaterSystem } from "../useWaterSystem";
+import { ref } from 'vue';
 
+// Mock des dépendances
 vi.mock("@composables/dam/useDam");
 vi.mock("@composables/glacier/useGlacier");
 vi.mock("@composables/river/useRiver");
+vi.mock("@composables/weather/useMainWeatherStation");
 vi.mock("@services/inflowAggregator");
 vi.mock("@services/loggingService");
+
+// Mock de onUnmounted
+vi.mock('vue', async () => {
+  const actual = await vi.importActual('vue');
+  return {
+    ...actual,
+    onUnmounted: vi.fn()
+  };
+});
 
 // Objets mock communs
 const mockDamState: DamInterface = {
@@ -197,18 +211,38 @@ describe("useWaterSystem", () => {
 
   describe("systemState$", () => {
     it("should emit the correct system state when all components are initialized", async () => {
-      const { initializeDam, initializeGlacier, initializeRiver, systemState$ } = useWaterSystem();
+      const mockMainWeatherStation: MainWeatherStationInterface = {
+        id: 'weather1',
+        name: 'Main Weather Station',
+        subStations: [],
+        averageTemperature: ref(20),
+        totalPrecipitation: ref(5),
+        lastUpdate: ref(new Date())
+      };
+
+      vi.mocked(useMainWeatherStation).mockReturnValue(mockMainWeatherStation);
+
+      const { initializeDam, initializeGlacier, initializeRiver, initializeMainWeatherStation, systemState$ } = useWaterSystem();
+
+      const mockWeatherStationConfig: WeatherStationConfig[] = [
+        { id: '1', name: 'Sub 1', latitude: 45.5 as Latitude, longitude: -73.5 as Longitude, elevation: 100 },
+        { id: '2', name: 'Sub 2', latitude: 46.5 as Latitude, longitude: -74.5 as Longitude, elevation: 200 }
+      ];
 
       initializeDam(mockDamState);
       initializeGlacier(mockGlacierState);
       initializeRiver(mockRiverState);
+      initializeMainWeatherStation('weather1', 'Main Weather Station', mockWeatherStationConfig);
 
       const state = await firstValueFrom(systemState$);
-      expect(state).toEqual({
-        dam: mockDamState,
-        glacier: mockGlacierState,
-        river: mockRiverState
-      });
+
+      expect(state.dam).toEqual(mockDamState);
+      expect(state.glacier).toEqual(mockGlacierState);
+      expect(state.river).toEqual(mockRiverState);
+      expect(state.mainWeather).toBeDefined();
+      expect(state.mainWeather?.id).toBe('weather1');
+      expect(state.mainWeather?.name).toBe('Main Weather Station');
+      expect(state.mainWeather?.subStations).toHaveLength(0);  // Puisque nous n'avons pas mocké les sous-stations
     });
   });
 
