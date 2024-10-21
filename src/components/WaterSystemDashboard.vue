@@ -6,16 +6,16 @@
       <GlacierComponent 
         v-if="glacierState" 
         :glacierState="glacierState" 
-        :currentTemperature="mainWeatherState?.averageTemperature.value || 0"
+        :currentTemperature="averageTemperature"
       />
       <RiverComponent 
         v-if="riverState" 
         :riverState="riverState" 
-        :currentPrecipitation="mainWeatherState?.totalPrecipitation.value || 0"
+        :currentPrecipitation="totalPrecipitation"
       />
       <MainWeatherStationComponent
-        v-if="mainWeatherState"
-        :mainWeatherState="mainWeatherState"
+        v-if="computedMainWeatherState"
+        :mainWeatherState="computedMainWeatherState"
       />
     </div>
   </div>
@@ -31,8 +31,7 @@ import type { DamInterface } from '@type/dam/DamInterface';
 import type { GlacierStateInterface } from '@type/glacier/GlacierStateInterface';
 import type { RiverStateInterface } from '@type/river/RiverStateInterface';
 import type { Latitude, Longitude, MainWeatherStationInterface } from '@type/weather/WeatherStationInterface';
-import { Subscription } from 'rxjs';
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 const damState = ref<DamInterface | null>(null);
 const glacierState = ref<GlacierStateInterface | null>(null);
@@ -49,8 +48,24 @@ const {
   error$
 } = useWaterSystem();
 
-let systemStateSubscription: Subscription | null = null;
-let errorSubscription: Subscription | null = null;
+// Computed properties for MainWeatherStationComponent
+const averageTemperature = computed(() => mainWeatherState.value?.averageTemperature || 0);
+const totalPrecipitation = computed(() => mainWeatherState.value?.totalPrecipitation || 0);
+
+const computedMainWeatherState = computed((): MainWeatherStationInterface | null => {
+  if (!mainWeatherState.value) return null;
+  return {
+    ...mainWeatherState.value,
+    averageTemperature,
+    totalPrecipitation
+  };
+});
+
+// Utiliser computed pour dériver des valeurs à partir de l'état
+const totalWaterVolume = computed(() => {
+  if (!damState.value || !riverState.value) return 0;
+  return damState.value.currentWaterLevel * damState.value.maxCapacity + riverState.value.waterVolume;
+});
 
 onMounted(() => {
   // Initialize the main weather station
@@ -98,7 +113,7 @@ onMounted(() => {
   });
 
   // Subscribe to system state updates
-  systemStateSubscription = systemState$.subscribe({
+  const subscription = systemState$.subscribe({
     next: (state) => {
       damState.value = state.dam;
       glacierState.value = state.glacier;
@@ -111,20 +126,17 @@ onMounted(() => {
   });
 
   // Subscribe to errors
-  errorSubscription = error$.subscribe((error) => {
+  const errorSubscription = error$.subscribe((error) => {
     if (error) {
       console.error('Water system error', error);
     }
   });
-});
 
-onUnmounted(() => {
-  if (systemStateSubscription) {
-    systemStateSubscription.unsubscribe();
-  }
-  if (errorSubscription) {
+  // Cleanup function
+  onUnmounted(() => {
+    subscription.unsubscribe();
     errorSubscription.unsubscribe();
-  }
-  cleanup();
+    cleanup();
+  });
 });
 </script>

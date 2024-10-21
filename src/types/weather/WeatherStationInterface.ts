@@ -53,9 +53,9 @@ export interface MainWeatherStationInterface {
   id: string;
   name: string;
   subStations: WeatherStationInterface[];
-  averageTemperature: ComputedRef<number>;
-  totalPrecipitation: ComputedRef<number>;
-  lastUpdate: ComputedRef<Date>;
+  averageTemperature: number | ComputedRef<number>;
+  totalPrecipitation: number | ComputedRef<number>;
+  lastUpdate: Date;
   temperature$: Observable<number>;
   precipitation$: Observable<number>;
 }

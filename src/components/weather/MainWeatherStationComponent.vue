@@ -4,11 +4,11 @@
     <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
       <div class="border-l-2 border-blue-500 pl-3">
         <p class="text-sm font-medium text-gray-500 mb-1">Température moyenne</p>
-        <p class="text-xl font-bold text-blue-600">{{ mainWeatherState.averageTemperature.toFixed(1) }}°C</p>
+        <p class="text-xl font-bold text-blue-600">{{ averageTemperatureValue.toFixed(1) }}°C</p>
       </div>
       <div class="border-l-2 border-green-500 pl-3">
         <p class="text-sm font-medium text-gray-500 mb-1">Précipitations totales</p>
-        <p class="text-xl font-bold text-green-600">{{ mainWeatherState.totalPrecipitation.toFixed(2) }} mm</p>
+        <p class="text-xl font-bold text-green-600">{{ totalPrecipitationValue.toFixed(2) }} mm</p>
       </div>
       <div class="border-l-2 border-purple-500 pl-3">
         <p class="text-sm font-medium text-gray-500 mb-1">Dernière mise à jour</p>
@@ -40,5 +40,15 @@ const props = defineProps<PropsInterface>();
 const formattedLastUpdate = computed(() => {
   const date = props.mainWeatherState.lastUpdate;
   return date instanceof Date ? format(date, "dd MMM yyyy HH:mm:ss") : 'N/A';
+});
+
+const averageTemperatureValue = computed(() => {
+  const temp = props.mainWeatherState.averageTemperature;
+  return typeof temp === 'number' ? temp : temp.value;
+});
+
+const totalPrecipitationValue = computed(() => {
+  const precip = props.mainWeatherState.totalPrecipitation;
+  return typeof precip === 'number' ? precip : precip.value;
 });
 </script>

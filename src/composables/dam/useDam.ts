@@ -1,125 +1,159 @@
-import { browserConfig } from '@config/browserEnv';
-import { calculateNetFlow, calculateNewWaterLevel, calculateWaterLevelChange, simulateFlowRate } from '@domain/dam';
-import { type AggregatedInflowInterface } from '@services/inflowAggregator';
-import type { DamInterface, DamUpdateInterface } from '@type/dam/DamInterface';
-import { handleObservableError, withErrorHandling } from '@utils/errorHandlerUtil';
-import { BehaviorSubject, Observable, catchError, distinctUntilChanged, map, shareReplay } from 'rxjs';
+import type { AggregatedInflowInterface } from '@services/inflowAggregator';
+import { loggingService } from '@services/loggingService';
+import type { DamActionsInterface, DamInterface, DamObservablesInterface, DamUpdateInterface, UseDamReturnInterface } from '@type/dam/DamInterface';
+import { DamValidationError, updateDamState, validateDamUpdate } from '@utils/dam/damUtils';
+import { handleObservableError } from '@utils/errorHandlerUtil';
+import { BehaviorSubject, Observable, Subject, catchError, distinctUntilChanged, map, shareReplay, takeUntil } from 'rxjs';
 
 /**
- * Fonction composable pour gérer l'état et les opérations d'un barrage.
- * Cette fonction encapsule la logique de simulation et de mise à jour des niveaux d'eau et des débits d'un barrage.
- * 
- * @param {DamInterface} initialData - État initial du barrage
- * @param {Observable<AggregatedInflowInterface>} aggregatedInflow$ - Flux d'eau entrante agrégé
- * @returns {Object} Un objet contenant des observables et des méthodes pour la gestion du barrage
+ * Interface définissant les dépendances injectables pour la simulation du barrage.
  */
-export function useDam(initialData: DamInterface, aggregatedInflow$: Observable<AggregatedInflowInterface>) {
-  // BehaviorSubject pour contenir et émettre l'état actuel du barrage
-  const damState$ = new BehaviorSubject<DamInterface>(initialData);
-  let lastUpdateTime = Date.now();
+interface DamDependenciesInterface {
+  updateDamState: typeof updateDamState;
+  validateDamUpdate: typeof validateDamUpdate;
+  handleObservableError: typeof handleObservableError;
+  loggingService: typeof loggingService;
+}
 
-  /**
-   * Observable qui émet le niveau d'eau actuel du barrage.
-   * Il filtre les valeurs en double et partage la dernière émission avec les nouveaux abonnés.
-   */
-  const currentWaterLevel$: Observable<number> = damState$.pipe(
+/**
+ * Crée les observables nécessaires pour la gestion de l'état du barrage.
+ * 
+ * @param initialState - L'état initial du barrage
+ * @param deps - Les dépendances injectées
+ * @param destroy$ - L'observable de destruction
+ * @returns Un objet contenant les observables du barrage
+ */
+function createDamObservables(initialState: DamInterface, deps: DamDependenciesInterface, destroy$: Subject<void>): DamObservablesInterface {
+  const damState$ = new BehaviorSubject<DamInterface>(initialState);
+
+  const sharedDamState$ = damState$.pipe(
+    takeUntil(destroy$),
+    shareReplay({ bufferSize: 1, refCount: true })
+  );
+
+  const currentWaterLevel$: Observable<number> = sharedDamState$.pipe(
     map(state => state.currentWaterLevel),
     distinctUntilChanged(),
-    catchError(err => handleObservableError(err, 'WATER_LEVEL_ERROR', 'useDam.currentWaterLevel$')),
-    shareReplay(1)
+    catchError(err => deps.handleObservableError(err, 'WATER_LEVEL_ERROR', 'useDam.currentWaterLevel$'))
   );
 
-  /**
-   * Observable qui émet le débit sortant du barrage.
-   * Il filtre les valeurs en double et partage la dernière émission avec les nouveaux abonnés.
-   */
-  const outflowRate$: Observable<number> = damState$.pipe(
+  const outflowRate$: Observable<number> = sharedDamState$.pipe(
     map(state => state.outflowRate),
     distinctUntilChanged(),
-    catchError(err => handleObservableError(err, 'OUTFLOW_RATE_ERROR', 'useDam.outflowRate$')),
-    shareReplay(1)
+    catchError(err => deps.handleObservableError(err, 'OUTFLOW_RATE_ERROR', 'useDam.outflowRate$'))
   );
 
-  /**
-   * Met à jour l'état du barrage en fonction des débits actuels et de l'intervalle de temps.
-   * Cette fonction calcule le nouveau niveau d'eau et simule les changements de débits.
-   * 
-   * @param {DamInterface} currentState - État actuel du barrage
-   * @param {number} timeInterval - Intervalle de temps pour la mise à jour en secondes
-   * @param {number} totalInflow - Débit d'eau entrant total
-   * @returns {DamInterface} État mis à jour du barrage
-   */
-  const updateDamState = (currentState: DamInterface, timeInterval: number, totalInflow: number): DamInterface => {
-    const netFlow = calculateNetFlow(totalInflow, currentState.outflowRate);
-    const waterLevelChange = calculateWaterLevelChange(netFlow, timeInterval, browserConfig.damSurfaceArea);
-    const newWaterLevel = calculateNewWaterLevel(
-      currentState.currentWaterLevel,
-      waterLevelChange,
-      currentState.minWaterLevel,
-      currentState.maxWaterLevel
-    );
+  return { damState$: sharedDamState$, currentWaterLevel$, outflowRate$ };
+}
 
-    // Assurez-vous que le nouveau niveau d'eau est différent de l'ancien
-    const adjustedWaterLevel = newWaterLevel === currentState.currentWaterLevel 
-      ? newWaterLevel + 0.001 
-      : newWaterLevel;
-
-    return {
-      ...currentState,
-      currentWaterLevel: adjustedWaterLevel,
-      inflowRate: totalInflow,
-      outflowRate: simulateFlowRate(currentState.outflowRate, browserConfig.maxFlowRateChange),
-      lastUpdated: new Date(),
-    };
-  };
-
-  /**
-   * Met à jour des propriétés spécifiques de l'état du barrage.
-   * Cette fonction permet des mises à jour partielles de l'état du barrage.
-   * 
-   * @param {DamUpdateInterface} update - Mise à jour partielle de l'état du barrage
-   */
-  const updateDam = (update: DamUpdateInterface): void => {
-    const currentState = damState$.getValue();
-    const newState = { ...currentState, ...update, lastUpdated: new Date() };
-    
-    if (isNaN(newState.currentWaterLevel)) {
-      throw new Error("Invalid water level update");
-    }
-    
-    damState$.next(newState);
-  };
+/**
+ * Crée la logique de simulation pour le barrage.
+ * 
+ * @param damState$ - L'observable de l'état du barrage
+ * @param aggregatedInflow$ - L'observable du débit d'entrée agrégé
+ * @param deps - Les dépendances injectées
+ * @param destroy$ - L'observable de destruction
+ * @returns Un objet contenant les fonctions de simulation du barrage
+ */
+function createDamSimulation(damState$: BehaviorSubject<DamInterface>, aggregatedInflow$: Observable<AggregatedInflowInterface>, deps: DamDependenciesInterface, destroy$: Subject<void>) {
+  let lastUpdateTime = Date.now();
 
   const simulateStep = (inflow: AggregatedInflowInterface) => {
     const currentTime = Date.now();
-    const timeInterval = (currentTime - lastUpdateTime) / 1000; // Convert to seconds
+    const timeInterval = (currentTime - lastUpdateTime) / 1000;
     lastUpdateTime = currentTime;
 
     const currentState = damState$.getValue();
-    const updatedState = updateDamState(currentState, timeInterval, inflow.totalInflow);
+    const updatedState = deps.updateDamState(currentState, timeInterval, inflow.totalInflow);
     damState$.next(updatedState);
   };
 
-  /**
-   * Démarre la simulation des changements de niveau d'eau du barrage.
-   * Cette fonction configure un intervalle pour mettre à jour régulièrement l'état du barrage.
-   * 
-   * @returns {Function} Une fonction pour arrêter la simulation
-   */
-  const startSimulation = withErrorHandling(() => {
-    const subscription = aggregatedInflow$.subscribe(simulateStep);
+  const startSimulation = () => {
+    const subscription = aggregatedInflow$.pipe(
+      takeUntil(destroy$)
+    ).subscribe({
+      next: simulateStep,
+      error: (err) => {
+        deps.loggingService.error('Error in dam simulation', 'useDam.startSimulation', { error: err });
+        throw err;
+      }
+    });
     return () => subscription.unsubscribe();
-  }, 'useDam.startSimulation');
+  };
+
+  return { startSimulation, simulateStep };
+}
+
+// Memoization function for expensive calculations
+function memoize<T extends (...args: any[]) => any>(fn: T): T {
+  const cache = new Map();
+  return ((...args: Parameters<T>): ReturnType<T> => {
+    const key = JSON.stringify(args);
+    if (cache.has(key)) {
+      return cache.get(key);
+    }
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  }) as T;
+}
+
+/**
+ * Hook composable pour gérer l'état et les opérations d'un barrage.
+ * 
+ * @param initialData - L'état initial du barrage
+ * @param aggregatedInflow$ - L'observable du débit d'entrée agrégé
+ * @param injectedDependencies - Les dépendances optionnelles à injecter (utile pour les tests)
+ * @returns Un objet contenant les observables et les actions pour gérer le barrage
+ */
+export function useDam(
+  initialData: DamInterface, 
+  aggregatedInflow$: Observable<AggregatedInflowInterface>,
+  injectedDependencies?: Partial<DamDependenciesInterface>
+): UseDamReturnInterface {
+  const deps: DamDependenciesInterface = {
+    updateDamState: memoize(updateDamState),
+    validateDamUpdate,
+    handleObservableError,
+    loggingService,
+    ...injectedDependencies
+  };
+
+  const destroy$ = new Subject<void>();
+  const damState$ = new BehaviorSubject<DamInterface>(initialData);
+  const { currentWaterLevel$, outflowRate$ } = createDamObservables(initialData, deps, destroy$);
+  const { startSimulation, simulateStep } = createDamSimulation(damState$, aggregatedInflow$, deps, destroy$);
+
+  /**
+   * Met à jour l'état du barrage avec les nouvelles valeurs fournies.
+   * 
+   * @param update - Les nouvelles valeurs à appliquer à l'état du barrage
+   * @throws {DamValidationError} Si la mise à jour est invalide
+   */
+  const updateDam: DamActionsInterface['updateDam'] = (update: DamUpdateInterface): void => {
+    try {
+      deps.validateDamUpdate(update);
+      const currentState = damState$.getValue();
+      const newState = { ...currentState, ...update, lastUpdated: new Date() };
+      damState$.next(newState);
+    } catch (error) {
+      if (error instanceof DamValidationError) {
+        deps.loggingService.error('Dam update validation failed', 'useDam.updateDam', { error: error.message });
+      }
+      throw error;
+    }
+  };
 
   /**
    * Nettoie les ressources utilisées par la simulation du barrage.
-   * Cette fonction complète l'observable damState$.
    */
-  const cleanup = withErrorHandling(() => {
+  const cleanup: DamActionsInterface['cleanup'] = () => {
+    destroy$.next();
+    destroy$.complete();
     damState$.complete();
-  }, 'useDam.cleanup');
+    deps.loggingService.info('Dam simulation cleaned up', 'useDam.cleanup');
+  };
 
-  // Retourne un objet avec tous les observables et fonctions nécessaires pour gérer le barrage
   return {
     damState$: damState$.asObservable(),
     currentWaterLevel$,
@@ -127,7 +161,6 @@ export function useDam(initialData: DamInterface, aggregatedInflow$: Observable<
     updateDam,
     startSimulation,
     cleanup,
-    // Exposer simulateStep pour les tests
     _simulateStep: simulateStep
   };
 }
