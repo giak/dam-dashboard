@@ -1,14 +1,55 @@
-import type { GlacierStateInterface } from '@type/glacier/GlacierStateInterface';
-import { BehaviorSubject } from 'rxjs';
+import type { GlacierStateInterface } from '@type/glacier/GlacierInterface';
+import { BehaviorSubject, firstValueFrom, interval } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useGlacier } from '../glacier/useGlacier';
+import { map, withLatestFrom } from 'rxjs/operators';
 
-vi.mock('@/services/loggingService', () => ({
-  loggingService: {
-    info: vi.fn(),
-    error: vi.fn()
-  }
-}));
+// Définir les mocks avant les imports
+const mockLoggingService = {
+  info: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+};
+
+const mockErrorHandlingService = {
+  emitError: vi.fn(),
+};
+
+const mockGlacierUtils = {
+  updateGlacierState: vi.fn((currentState, temperatureCelsius, timeInterval) => ({
+    ...currentState,
+    volume: currentState.volume - (0.1 * timeInterval),
+    meltRate: currentState.meltRate + (0.01 * temperatureCelsius),
+    outflowRate: currentState.outflowRate + (0.05 * temperatureCelsius),
+    lastUpdated: new Date(),
+  })),
+  validateGlacierUpdate: vi.fn(),
+  GlacierValidationError: class GlacierValidationError extends Error {},
+};
+
+const mockGlacierSimulation = {
+  createGlacierSimulation: vi.fn((initialState, temperature$) => {
+    const glacierState$ = new BehaviorSubject(initialState);
+    const simulation$ = interval(100).pipe(
+      withLatestFrom(temperature$),
+      map(([, temperature]) => temperature)
+    );
+    const updateState = (temperatureCelsius: number) => {
+      const currentState = glacierState$.getValue();
+      const newState = mockGlacierUtils.updateGlacierState(currentState, temperatureCelsius, 0.1);
+      glacierState$.next(newState);
+    };
+    return { glacierState$, simulation$, updateState };
+  })
+};
+
+// Utiliser vi.doMock au lieu de vi.mock
+vi.doMock('@/services/loggingService', () => ({ loggingService: mockLoggingService }));
+vi.doMock('@/services/errorHandlingService', () => ({ errorHandlingService: mockErrorHandlingService }));
+vi.doMock('@utils/glacier/glacierUtils', () => mockGlacierUtils);
+vi.doMock('@services/glacierSimulation', () => mockGlacierSimulation);
+
+// Importer useGlacier après les mocks
+const { useGlacier } = await import('../glacier/useGlacier');
 
 describe('useGlacier', () => {
   let initialData: GlacierStateInterface;
@@ -20,67 +61,68 @@ describe('useGlacier', () => {
       name: 'Test Glacier',
       volume: 1000000,
       meltRate: 0.1,
-      outflowRate: 0.1,
-      elevation: 1000,
-      area: 1000,
-      temperature: 0,
-      flow: 0,
-      lastUpdated: new Date()
+      outflowRate: 5,
+      lastUpdated: new Date(),
+      elevation: 3000,
+      area: 50000,
+      temperature: -5,
+      flow: 10
     };
     temperature$ = new BehaviorSubject<number>(0);
-    vi.useFakeTimers();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    vi.clearAllMocks();
   });
 
-  it('should initialize with correct initial state', () => {
+  it('should initialize with the correct initial state', async () => {
     const { glacierState } = useGlacier(initialData, temperature$);
     expect(glacierState.value).toEqual(initialData);
   });
 
-  it('should update glacier state based on temperature', async () => {
-    const { glacierState, startSimulation, stopSimulation } = useGlacier(initialData, temperature$);
+  it('should update glacier state when temperature changes', async () => {
+    const { glacierState, startSimulation } = useGlacier(initialData, temperature$);
+    const stopSimulation = startSimulation();
     
-    startSimulation();
-    temperature$.next(10); // Set temperature to 10°C
+    temperature$.next(5);
+    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second
     
-    vi.advanceTimersByTime(1000);
+    stopSimulation();
     
-    expect(glacierState.value.meltRate).toBeGreaterThan(initialData.meltRate);
     expect(glacierState.value.volume).toBeLessThan(initialData.volume);
+    expect(glacierState.value.meltRate).toBeGreaterThan(initialData.meltRate);
+    expect(glacierState.value.outflowRate).toBeGreaterThan(initialData.outflowRate);
+  });
+
+  it('should emit updated outflow rate', async () => {
+    const { outflowRate$, startSimulation } = useGlacier(initialData, temperature$);
+    const stopSimulation = startSimulation();
+    
+    temperature$.next(10);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    const newOutflowRate = await firstValueFrom(outflowRate$);
+    expect(newOutflowRate).toBeGreaterThan(initialData.outflowRate);
     
     stopSimulation();
   });
 
-  it('should emit updated outflow rate', () => {
-    return new Promise<void>((resolve) => {
-      const { outflowRate$, startSimulation, stopSimulation } = useGlacier(initialData, temperature$);
-      
-      let emissionCount = 0;
-      outflowRate$.subscribe(rate => {
-        emissionCount++;
-        if (emissionCount === 2) {
-          expect(rate).toBeGreaterThan(initialData.outflowRate);
-          stopSimulation();
-          resolve();
-        }
-      });
-      
-      startSimulation();
-      temperature$.next(20); // Set temperature to 20°C
-      vi.advanceTimersByTime(1000);
+  it('should handle errors during glacier update', () => {
+    const { updateGlacier } = useGlacier(initialData, temperature$);
+    mockGlacierUtils.validateGlacierUpdate.mockImplementationOnce(() => {
+      throw new mockGlacierUtils.GlacierValidationError("Invalid update");
     });
+    
+    expect(() => updateGlacier({ volume: -1 })).toThrow(mockGlacierUtils.GlacierValidationError);
+    expect(mockErrorHandlingService.emitError).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'GLACIER_UPDATE_ERROR'
+    }));
   });
 
-  it('should stop simulation when cleanup is called', () => {
-    const { startSimulation, cleanup } = useGlacier(initialData, temperature$);
-    
-    startSimulation();
+  it('should clean up resources', () => {
+    const { cleanup } = useGlacier(initialData, temperature$);
     cleanup();
-    
-    // Add assertions to check if the simulation has stopped
-    // This might involve checking internal state or mocking interval/subscription
+    expect(mockLoggingService.info).toHaveBeenCalledWith('Glacier resources cleaned up', 'useGlacier', expect.any(Object));
   });
 });

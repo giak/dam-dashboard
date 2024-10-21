@@ -32,6 +32,7 @@ import type { GlacierStateInterface } from '@type/glacier/GlacierStateInterface'
 import type { RiverStateInterface } from '@type/river/RiverStateInterface';
 import type { Latitude, Longitude, MainWeatherStationInterface } from '@type/weather/WeatherStationInterface';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { errorHandlingService } from '@services/errorHandlingService';
 
 const damState = ref<DamInterface | null>(null);
 const glacierState = ref<GlacierStateInterface | null>(null);
@@ -126,9 +127,11 @@ onMounted(() => {
   });
 
   // Subscribe to errors
-  const errorSubscription = error$.subscribe((error) => {
+  const errorSubscription = errorHandlingService.getErrorObservable().subscribe((error) => {
     if (error) {
       console.error('Water system error', error);
+      // Ici, vous pouvez ajouter une logique pour afficher l'erreur à l'utilisateur
+      // Par exemple, en utilisant un composant de notification ou une alerte
     }
   });
 

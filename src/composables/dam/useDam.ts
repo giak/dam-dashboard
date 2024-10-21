@@ -4,6 +4,7 @@ import type { DamActionsInterface, DamInterface, DamObservablesInterface, DamUpd
 import { DamValidationError, updateDamState, validateDamUpdate } from '@utils/dam/damUtils';
 import { handleObservableError } from '@utils/errorHandlerUtil';
 import { BehaviorSubject, Observable, Subject, catchError, distinctUntilChanged, map, shareReplay, takeUntil } from 'rxjs';
+import { errorHandlingService } from '@services/errorHandlingService';
 
 /**
  * Interface définissant les dépendances injectables pour la simulation du barrage.
@@ -74,7 +75,12 @@ function createDamSimulation(damState$: BehaviorSubject<DamInterface>, aggregate
     ).subscribe({
       next: simulateStep,
       error: (err) => {
-        deps.loggingService.error('Error in dam simulation', 'useDam.startSimulation', { error: err });
+        errorHandlingService.emitError({
+          message: 'Erreur dans la simulation du barrage',
+          code: 'DAM_SIMULATION_ERROR',
+          timestamp: Date.now(),
+          context: 'useDam.startSimulation'
+        });
         throw err;
       }
     });
@@ -138,7 +144,12 @@ export function useDam(
       damState$.next(newState);
     } catch (error) {
       if (error instanceof DamValidationError) {
-        deps.loggingService.error('Dam update validation failed', 'useDam.updateDam', { error: error.message });
+        errorHandlingService.emitError({
+          message: 'Erreur de mise à jour du barrage',
+          code: 'DAM_UPDATE_ERROR',
+          timestamp: Date.now(),
+          context: 'useDam.updateDam'
+        });
       }
       throw error;
     }

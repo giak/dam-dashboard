@@ -1,4 +1,4 @@
-import { Subject, Observable } from "rxjs";
+import { Observable, Subject } from "rxjs";
 
 /**
  * Interface décrivant la structure des données d'erreur.

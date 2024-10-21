@@ -39,37 +39,8 @@ export function useWaterSystem() {
       throw new Error('Main weather station must be initialized before glacier');
     }
     glacierSimulation = useGlacier(initialData, mainWeatherStation.temperature$);
-    const glacierStateObservable = new Observable<GlacierStateInterface>(observer => {
-      if (glacierSimulation) {
-        // Emit the initial value
-        observer.next({
-          ...glacierSimulation.glacierState.value,
-          elevation: initialData.elevation,
-          area: initialData.area,
-          temperature: initialData.temperature,
-          flow: initialData.flow
-        });
-        
-        // Use watch to observe changes
-        const unwatch = watch(glacierSimulation.glacierState, (newValue) => {
-          observer.next({
-            ...newValue,
-            elevation: initialData.elevation,
-            area: initialData.area,
-            temperature: initialData.temperature,
-            flow: initialData.flow
-          });
-        }, { deep: true });
-
-        // Return a cleanup function
-        return () => {
-          unwatch();
-        };
-      }
-      return () => {};
-    });
-    glacierStateObservable.subscribe(glacierState$);
-    glacierSimulation.startSimulation();
+    glacierSimulation.glacierState$.subscribe(glacierState$);
+    const stopSimulation = glacierSimulation.startSimulation();
 
     addSource({ name: 'Glacier', outflowRate$: glacierSimulation.outflowRate$ });
 
@@ -82,6 +53,8 @@ export function useWaterSystem() {
     }
 
     loggingService.info('Glacier simulation initialized', 'useWaterSystem.initializeGlacier', { glacierId: initialData.id });
+
+    return stopSimulation;
   }
 
   function initializeRiver(initialData: RiverStateInterface) {
