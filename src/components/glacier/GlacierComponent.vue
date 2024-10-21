@@ -44,17 +44,22 @@
         </div>
       </div>
     </div>
+    <div class="mt-4">
+      <p class="text-sm font-medium text-gray-500 mb-1">Température actuelle</p>
+      <p class="text-lg font-bold text-gray-600">{{ currentTemperature.toFixed(1) }}°C</p>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import TrendIndicator from "@/components/common/TrendIndicator.vue";
-import type { GlacierStateInterface } from "@/services/glacierSimulation";
+import TrendIndicator from "@components/common/TrendIndicator.vue";
+import type { GlacierStateInterface } from "@type/glacier/GlacierStateInterface";
 import { format, parseISO } from "date-fns";
 import { computed, ref, watch } from "vue";
 
 interface PropsInterface {
   glacierState: GlacierStateInterface;
+  currentTemperature: number;
 }
 
 const props = defineProps<PropsInterface>();

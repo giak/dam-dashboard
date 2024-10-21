@@ -1,11 +1,11 @@
 import { createWeatherSimulation } from '@/services/weatherSimulation';
-import type {
-    Latitude,
-    Longitude,
-    WeatherStationConfig,
-    WeatherStationInterface
-} from '@/types/weather/WeatherStationInterface';
 import { isValidLatitude, isValidLongitude } from '@/types/weather/WeatherStationInterface';
+import type {
+  Latitude,
+  Longitude,
+  WeatherStationConfig,
+  WeatherStationInterface
+} from '@type/weather/WeatherStationInterface';
 
 /**
  * Composable pour gérer une sous-station météo

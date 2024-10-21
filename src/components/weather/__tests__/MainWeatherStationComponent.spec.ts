@@ -1,9 +1,9 @@
 import { useMainWeatherStation } from '@/composables/weather/useMainWeatherStation';
-import type { MainWeatherStationInterface, WeatherStationInterface } from '@/types/weather/WeatherStationInterface';
+import type { MainWeatherStationInterface, WeatherStationInterface } from '@type/weather/WeatherStationInterface';
 import { mount } from '@vue/test-utils';
-import { Observable } from 'rxjs';
+import { Observable, BehaviorSubject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
-import { ref } from 'vue';
+import { computed } from 'vue';
 import MainWeatherStationComponent from '../MainWeatherStationComponent.vue';
 
 // Mock the useMainWeatherStation composable
@@ -27,18 +27,18 @@ describe('MainWeatherStationComponent', () => {
       id: '1',
       name: 'Test Station',
       subStations: [mockSubStation, { ...mockSubStation, id: '2', name: 'Sub 2' }],
-      averageTemperature: ref(20.5),
-      totalPrecipitation: ref(5.2),
-      lastUpdate: ref(new Date('2023-01-01T12:00:00'))
+      averageTemperature: computed(() => 20.5),
+      totalPrecipitation: computed(() => 5.2),
+      lastUpdate: computed(() => new Date('2023-01-01T12:00:00')),
+      temperature$: new BehaviorSubject(20.5),
+      precipitation$: new BehaviorSubject(5.2)
     };
 
     vi.mocked(useMainWeatherStation).mockReturnValue(mockMainWeatherStation);
 
     const wrapper = mount(MainWeatherStationComponent, {
       props: {
-        id: '1',
-        name: 'Test Station',
-        subStationConfigs: []
+        mainWeatherState: mockMainWeatherStation
       }
     });
 
@@ -52,9 +52,11 @@ describe('MainWeatherStationComponent', () => {
   });
 
   it('updates when data changes', async () => {
-    const averageTemperature = ref(20.5);
-    const totalPrecipitation = ref(5.2);
-    const lastUpdate = ref(new Date('2023-01-01T12:00:00'));
+    const averageTemperature = computed(() => 20.5);
+    const totalPrecipitation = computed(() => 5.2);
+    const lastUpdate = computed(() => new Date('2023-01-01T12:00:00'));
+    const temperature$ = new BehaviorSubject(20.5);
+    const precipitation$ = new BehaviorSubject(5.2);
 
     const mockMainWeatherStation: MainWeatherStationInterface = {
       id: '1',
@@ -62,24 +64,24 @@ describe('MainWeatherStationComponent', () => {
       subStations: [],
       averageTemperature,
       totalPrecipitation,
-      lastUpdate
+      lastUpdate,
+      temperature$,
+      precipitation$
     };
 
     vi.mocked(useMainWeatherStation).mockReturnValue(mockMainWeatherStation);
 
     const wrapper = mount(MainWeatherStationComponent, {
       props: {
-        id: '1',
-        name: 'Test Station',
-        subStationConfigs: []
+        mainWeatherState: mockMainWeatherStation
       }
     });
 
     expect(wrapper.text()).toContain('20.5');
     expect(wrapper.text()).toContain('5.20');
 
-    averageTemperature.value = 22.0;
-    totalPrecipitation.value = 6.5;
+    temperature$.next(22.0);
+    precipitation$.next(6.5);
     await wrapper.vm.$nextTick();
 
     expect(wrapper.text()).toContain('22.0');

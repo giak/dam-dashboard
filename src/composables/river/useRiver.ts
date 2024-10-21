@@ -1,53 +1,78 @@
 import { loggingService } from '@services/loggingService';
-import { createRiverSimulation, type RiverSimulationInterface, type RiverStateInterface } from '@services/riverSimulation';
-import { withErrorHandling } from '@utils/errorHandlerUtil';
-import { BehaviorSubject, Observable } from 'rxjs';
-import { distinctUntilChanged, map, shareReplay } from 'rxjs/operators';
+import type { RiverStateInterface } from '@type/river/RiverStateInterface';
+import { BehaviorSubject, interval, Observable, Subscription } from 'rxjs';
+import { map, takeUntil, withLatestFrom } from 'rxjs/operators';
+import { computed, onUnmounted, ref } from 'vue';
 
-export interface UseRiverReturnInterface {
-  riverState$: Observable<RiverStateInterface>;
-  outflowRate$: Observable<number>;
-  startSimulation: () => void;
-  stopSimulation: () => void;
-  cleanup: () => void;
-}
+const SIMULATION_INTERVAL = 1000; // 1 second
+const BASE_FLOW_RATE = 10; // Base flow rate in m³/s
+const PRECIPITATION_IMPACT_FACTOR = 0.5; // How much precipitation affects flow rate
 
-export function useRiver(initialState: RiverStateInterface): UseRiverReturnInterface {
-  const riverSimulation: RiverSimulationInterface = createRiverSimulation(initialState);
-  const riverState$ = new BehaviorSubject<RiverStateInterface>(initialState);
+export function useRiver(
+  initialData: RiverStateInterface,
+  precipitation$: Observable<number>
+) {
+  const riverState = ref<RiverStateInterface>(initialData);
+  const outflowRate$ = new BehaviorSubject<number>(initialData.flowRate);
 
-  const updateRiverState = withErrorHandling((newState: RiverStateInterface) => {
-    riverState$.next(newState);
-    loggingService.info('River state updated', 'useRiver.updateRiverState', { riverId: newState.id });
-  }, 'useRiver.updateRiverState');
+  let simulationSubscription: Subscription | null = null;
 
-  riverSimulation.riverState$.subscribe(updateRiverState);
+  const updateRiverState = (precipitationMm: number) => {
+    const currentState = riverState.value;
+    const adjustedFlowRate = BASE_FLOW_RATE + (precipitationMm * PRECIPITATION_IMPACT_FACTOR);
+    
+    const newWaterVolume = currentState.waterVolume + (precipitationMm * currentState.catchmentArea / 1000); // Convert mm to m³
+    const newFlowRate = adjustedFlowRate;
 
-  const outflowRate$ = riverState$.pipe(
-    map(state => state.flowRate),
-    distinctUntilChanged(),
-    shareReplay(1)
-  );
+    riverState.value = {
+      ...currentState,
+      waterVolume: newWaterVolume,
+      flowRate: newFlowRate,
+      lastUpdated: new Date()
+    };
 
-  const startSimulation = withErrorHandling(() => {
-    riverSimulation.startSimulation();
-    loggingService.info('River simulation started', 'useRiver.startSimulation', { riverId: initialState.id });
-  }, 'useRiver.startSimulation');
+    outflowRate$.next(newFlowRate);
 
-  const stopSimulation = withErrorHandling(() => {
-    riverSimulation.stopSimulation();
-    loggingService.info('River simulation stopped', 'useRiver.stopSimulation', { riverId: initialState.id });
-  }, 'useRiver.stopSimulation');
+    loggingService.info('River state updated', 'useRiver', { 
+      id: riverState.value.id,
+      waterVolume: newWaterVolume,
+      flowRate: newFlowRate
+    });
+  };
 
-  const cleanup = withErrorHandling(() => {
-    riverSimulation.cleanup();
-    riverState$.complete();
-    loggingService.info('River resources cleaned up', 'useRiver.cleanup', { riverId: initialState.id });
-  }, 'useRiver.cleanup');
+  const startSimulation = () => {
+    if (simulationSubscription) {
+      simulationSubscription.unsubscribe();
+    }
+
+    simulationSubscription = interval(SIMULATION_INTERVAL).pipe(
+      takeUntil(new Observable(() => () => cleanup())),
+      withLatestFrom(precipitation$),
+      map(([, precipitation]) => precipitation)
+    ).subscribe(updateRiverState);
+
+    loggingService.info('River simulation started', 'useRiver', { id: riverState.value.id });
+  };
+
+  const stopSimulation = () => {
+    if (simulationSubscription) {
+      simulationSubscription.unsubscribe();
+      simulationSubscription = null;
+      loggingService.info('River simulation stopped', 'useRiver', { id: riverState.value.id });
+    }
+  };
+
+  const cleanup = () => {
+    stopSimulation();
+    outflowRate$.complete();
+    loggingService.info('River resources cleaned up', 'useRiver', { id: riverState.value.id });
+  };
+
+  onUnmounted(cleanup);
 
   return {
-    riverState$: riverState$.asObservable(),
-    outflowRate$,
+    riverState: computed(() => riverState.value),
+    outflowRate$: outflowRate$.asObservable(),
     startSimulation,
     stopSimulation,
     cleanup

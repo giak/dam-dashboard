@@ -3,7 +3,7 @@ import { calculateNetFlow, calculateNewWaterLevel, calculateWaterLevelChange, si
 import { type AggregatedInflowInterface } from '@services/inflowAggregator';
 import type { DamInterface, DamUpdateInterface } from '@type/dam/DamInterface';
 import { handleObservableError, withErrorHandling } from '@utils/errorHandlerUtil';
-import { BehaviorSubject, Observable, catchError, combineLatest, distinctUntilChanged, map, shareReplay } from 'rxjs';
+import { BehaviorSubject, Observable, catchError, distinctUntilChanged, map, shareReplay } from 'rxjs';
 
 /**
  * Fonction composable pour gérer l'état et les opérations d'un barrage.

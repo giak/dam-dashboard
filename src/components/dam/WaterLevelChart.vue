@@ -5,7 +5,7 @@
 </template>
 
 <script setup lang="ts">
-import { useWaterLevelChart } from '@/composables/useWaterLevelChart';
+import { useWaterLevelChart } from '@composables/useWaterLevelChart';
 import { BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Title, Tooltip } from 'chart.js';
 import { computed, ref, watch } from 'vue';
 import { Bar } from 'vue-chartjs';

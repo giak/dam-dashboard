@@ -32,19 +32,24 @@
           <p class="text-sm font-medium text-gray-500 mb-1">Dernière mise à jour</p>
           <p class="text-sm text-gray-600">{{ formattedLastUpdate }}</p>
         </div>
+        <div class="border-l-2 border-orange-500 pl-3">
+          <p class="text-sm font-medium text-gray-500 mb-1">Précipitations actuelles</p>
+          <p class="text-lg font-bold text-gray-600">{{ currentPrecipitation.toFixed(2) }} mm/h</p>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import TrendIndicator from "@/components/common/TrendIndicator.vue";
-import type { RiverStateInterface } from "@/services/riverSimulation";
+import TrendIndicator from "@components/common/TrendIndicator.vue";
+import type { RiverStateInterface } from "@type/river/RiverStateInterface";
 import { format, parseISO } from "date-fns";
 import { computed, ref, watch } from "vue";
 
 interface PropsInterface {
   riverState: RiverStateInterface;
+  currentPrecipitation: number;
 }
 
 const props = defineProps<PropsInterface>();

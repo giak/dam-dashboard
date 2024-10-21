@@ -1,12 +1,12 @@
-import { loggingService } from '@/services/loggingService';
+import { loggingService } from '@services/loggingService';
 import type {
-    MainWeatherStationInterface,
-    WeatherDataInterface,
-    WeatherStationConfig,
-    WeatherStationInterface
-} from '@/types/weather/WeatherStationInterface';
-import { combineLatest, map, Observable } from 'rxjs';
-import { onUnmounted, ref, type Ref } from 'vue';
+  MainWeatherStationInterface,
+  WeatherDataInterface,
+  WeatherStationConfig,
+  WeatherStationInterface
+} from '@type/weather/WeatherStationInterface';
+import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
+import { computed, onUnmounted, ref } from 'vue';
 import { useWeatherStation } from './useWeatherStation';
 
 const TEMPERATURE_PRECISION = 2;
@@ -51,49 +51,52 @@ export function createCombinedWeatherData$(subStations: WeatherStationInterface[
 export function useMainWeatherStation(
   id: string,
   name: string,
-  subStationConfigs: WeatherStationConfig[] = []  // Ajoutez une valeur par défaut
-): MainWeatherStationInterface {
+  subStationConfigs: WeatherStationConfig[]
+): MainWeatherStationInterface & { temperature$: Observable<number>, precipitation$: Observable<number> } {
   const subStations = subStationConfigs.map(config => useWeatherStation(config));
 
-  const averageTemperature: Ref<number> = ref(0);
-  const totalPrecipitation: Ref<number> = ref(0);
-  const lastUpdate: Ref<Date> = ref(new Date());
+  const averageTemperature = ref(0);
+  const totalPrecipitation = ref(0);
+  const lastUpdate = ref(new Date());
+
+  const temperature$ = new BehaviorSubject<number>(0);
+  const precipitation$ = new BehaviorSubject<number>(0);
+
+  const updateWeatherData = (weatherData: WeatherDataInterface[]) => {
+    averageTemperature.value = calculateAverageTemperature(weatherData);
+    totalPrecipitation.value = calculateTotalPrecipitation(weatherData);
+    lastUpdate.value = new Date();
+
+    temperature$.next(averageTemperature.value);
+    precipitation$.next(totalPrecipitation.value);
+  };
 
   const combinedWeatherData$ = createCombinedWeatherData$(subStations);
 
-  const subscription = combinedWeatherData$.pipe(
-    map((dataArray: WeatherDataInterface[]) => {
-      averageTemperature.value = calculateAverageTemperature(dataArray);
-      totalPrecipitation.value = calculateTotalPrecipitation(dataArray);
-      lastUpdate.value = new Date();
-
-      return {
-        averageTemperature: averageTemperature.value,
-        totalPrecipitation: totalPrecipitation.value,
-        lastUpdate: lastUpdate.value
-      };
-    })
-  ).subscribe({
-    next: (data) => {
-      loggingService.info('Weather data updated', 'useMainWeatherStation', data);
-    },
-    error: (error) => {
-      loggingService.error('Error processing weather data', 'useMainWeatherStation', { error });
-    }
+  const subscription = combinedWeatherData$.subscribe(weatherData => {
+    updateWeatherData(weatherData);
+    loggingService.info('Weather data updated', 'useMainWeatherStation', { 
+      averageTemperature: averageTemperature.value, 
+      totalPrecipitation: totalPrecipitation.value 
+    });
   });
 
   onUnmounted(() => {
     subscription.unsubscribe();
     subStations.forEach(station => station.cleanup());
-    loggingService.info('Main weather station cleaned up', 'useMainWeatherStation', { stationId: id });
+    temperature$.complete();
+    precipitation$.complete();
+    loggingService.info('Main weather station cleaned up', 'useMainWeatherStation');
   });
 
   return {
     id,
     name,
     subStations,
-    averageTemperature,
-    totalPrecipitation,
-    lastUpdate
+    averageTemperature: computed(() => averageTemperature.value),
+    totalPrecipitation: computed(() => totalPrecipitation.value),
+    lastUpdate: computed(() => lastUpdate.value),
+    temperature$,
+    precipitation$
   };
 }

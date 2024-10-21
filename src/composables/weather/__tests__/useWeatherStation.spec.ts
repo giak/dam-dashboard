@@ -1,5 +1,5 @@
 import { createWeatherSimulation } from '@/services/weatherSimulation';
-import { isValidLatitude, isValidLongitude, type Latitude, type Longitude, type WeatherStationConfig } from '@/types/weather/WeatherStationInterface';
+import { isValidLatitude, isValidLongitude, type Latitude, type Longitude, type WeatherStationConfig } from '@types/weather/WeatherStationInterface';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWeatherStation } from '../useWeatherStation';
 

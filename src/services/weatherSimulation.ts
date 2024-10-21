@@ -1,4 +1,4 @@
-import type { WeatherDataInterface } from '@/types/weather/WeatherStationInterface';
+import type { WeatherDataInterface } from '@type/weather/WeatherStationInterface';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { loggingService } from './loggingService';
 

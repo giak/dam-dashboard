@@ -53,8 +53,8 @@
 </template>
 
 <script setup lang="ts">
-import TrendIndicator from "@/components/common/TrendIndicator.vue";
-import type { DamInterface } from "@/types/dam/DamInterface";
+import TrendIndicator from "@components/common/TrendIndicator.vue";
+import type { DamInterface } from "@type/dam/DamInterface";
 import { format, parseISO } from "date-fns";
 import { computed, ref, watch } from "vue";
 import WaterLevelChart from "./WaterLevelChart.vue";

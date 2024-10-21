@@ -1,53 +1,80 @@
-import { createGlacierSimulation, type GlacierSimulationInterface, type GlacierStateInterface } from '@services/glacierSimulation';
+import type { GlacierStateInterface } from '@services/glacierSimulation';
 import { loggingService } from '@services/loggingService';
-import { withErrorHandling } from '@utils/errorHandlerUtil';
-import { BehaviorSubject, Observable } from 'rxjs';
-import { distinctUntilChanged, map, shareReplay } from 'rxjs/operators';
+import { BehaviorSubject, interval, Observable, Subscription } from 'rxjs';
+import { map, takeUntil, withLatestFrom } from 'rxjs/operators';
+import { computed, onUnmounted, ref } from 'vue';
 
-export interface UseGlacierReturnInterface {
-  glacierState$: Observable<GlacierStateInterface>;
-  outflowRate$: Observable<number>;
-  startSimulation: () => void;
-  stopSimulation: () => void;
-  cleanup: () => void;
-}
+const SIMULATION_INTERVAL = 1000; // 1 second
+const BASE_MELT_RATE = 0.1; // Base melt rate in m³/s
+const TEMPERATURE_IMPACT_FACTOR = 0.05; // How much temperature affects melt rate
 
-export function useGlacier(initialState: GlacierStateInterface): UseGlacierReturnInterface {
-  const glacierSimulation: GlacierSimulationInterface = createGlacierSimulation(initialState);
-  const glacierState$ = new BehaviorSubject<GlacierStateInterface>(initialState);
+export function useGlacier(
+  initialData: GlacierStateInterface,
+  temperature$: Observable<number>
+) {
+  const glacierState = ref<GlacierStateInterface>(initialData);
+  const outflowRate$ = new BehaviorSubject<number>(initialData.outflowRate);
 
-  const updateGlacierState = withErrorHandling((newState: GlacierStateInterface) => {
-    glacierState$.next(newState);
-    loggingService.info('Glacier state updated', 'useGlacier.updateGlacierState', { glacierId: newState.id });
-  }, 'useGlacier.updateGlacierState');
+  let simulationSubscription: Subscription | null = null;
 
-  glacierSimulation.glacierState$.subscribe(updateGlacierState);
+  const updateGlacierState = (temperatureCelsius: number) => {
+    const currentState = glacierState.value;
+    const adjustedMeltRate = BASE_MELT_RATE + (temperatureCelsius * TEMPERATURE_IMPACT_FACTOR);
+    
+    const newVolume = Math.max(0, currentState.volume - adjustedMeltRate * SIMULATION_INTERVAL / 1000);
+    const newOutflowRate = adjustedMeltRate * (newVolume / currentState.volume);
 
-  const outflowRate$ = glacierState$.pipe(
-    map(state => state.outflowRate),
-    distinctUntilChanged(),
-    shareReplay(1)
-  );
+    glacierState.value = {
+      ...currentState,
+      volume: newVolume,
+      meltRate: adjustedMeltRate,
+      outflowRate: newOutflowRate,
+      lastUpdated: new Date()
+    };
 
-  const startSimulation = withErrorHandling(() => {
-    glacierSimulation.startSimulation();
-    loggingService.info('Glacier simulation started', 'useGlacier.startSimulation', { glacierId: initialState.id });
-  }, 'useGlacier.startSimulation');
+    outflowRate$.next(newOutflowRate);
 
-  const stopSimulation = withErrorHandling(() => {
-    glacierSimulation.stopSimulation();
-    loggingService.info('Glacier simulation stopped', 'useGlacier.stopSimulation', { glacierId: initialState.id });
-  }, 'useGlacier.stopSimulation');
+    loggingService.info('Glacier state updated', 'useGlacier', { 
+      id: glacierState.value.id,
+      volume: newVolume,
+      meltRate: adjustedMeltRate,
+      outflowRate: newOutflowRate
+    });
+  };
 
-  const cleanup = withErrorHandling(() => {
-    glacierSimulation.cleanup();
-    glacierState$.complete();
-    loggingService.info('Glacier resources cleaned up', 'useGlacier.cleanup', { glacierId: initialState.id });
-  }, 'useGlacier.cleanup');
+  const startSimulation = () => {
+    if (simulationSubscription) {
+      simulationSubscription.unsubscribe();
+    }
+
+    simulationSubscription = interval(SIMULATION_INTERVAL).pipe(
+      takeUntil(new Observable(() => () => cleanup())),
+      withLatestFrom(temperature$),
+      map(([, temperature]) => temperature)
+    ).subscribe(updateGlacierState);
+
+    loggingService.info('Glacier simulation started', 'useGlacier', { id: glacierState.value.id });
+  };
+
+  const stopSimulation = () => {
+    if (simulationSubscription) {
+      simulationSubscription.unsubscribe();
+      simulationSubscription = null;
+      loggingService.info('Glacier simulation stopped', 'useGlacier', { id: glacierState.value.id });
+    }
+  };
+
+  const cleanup = () => {
+    stopSimulation();
+    outflowRate$.complete();
+    loggingService.info('Glacier resources cleaned up', 'useGlacier', { id: glacierState.value.id });
+  };
+
+  onUnmounted(cleanup);
 
   return {
-    glacierState$: glacierState$.asObservable(),
-    outflowRate$,
+    glacierState: computed(() => glacierState.value),
+    outflowRate$: outflowRate$.asObservable(),
     startSimulation,
     stopSimulation,
     cleanup

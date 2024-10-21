@@ -1,14 +1,14 @@
 import { useWaterSystem } from '@composables/useWaterSystem';
-import { loggingService } from '@services/loggingService';
-import type { DamInterface } from '@type/dam/DamInterface';
 import type { GlacierStateInterface } from '@services/glacierSimulation';
+import { loggingService } from '@services/loggingService';
 import type { RiverStateInterface } from '@services/riverSimulation';
-import type { MainWeatherStationInterface, WeatherStationConfig } from '@/types/weather/WeatherStationInterface';
+import type { DamInterface } from '@types/dam/DamInterface';
 import { mount } from '@vue/test-utils';
 import { BehaviorSubject, Observable, Subject } from 'rxjs';
+import type { MainWeatherStationInterface } from '@/types/weather/WeatherStationInterface';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import WaterSystemDashboard from '../WaterSystemDashboard.vue';
 import { ref } from 'vue';
+import WaterSystemDashboard from '../WaterSystemDashboard.vue';
 
 // Mock des dépendances
 vi.mock('@/composables/useWaterSystem', () => ({

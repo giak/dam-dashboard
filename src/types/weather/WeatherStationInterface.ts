@@ -1,5 +1,5 @@
-import type { Ref } from 'vue';
 import type { Observable } from 'rxjs';
+import type { ComputedRef } from 'vue';
 
 /**
  * Représente les données météorologiques à un instant donné.
@@ -53,9 +53,11 @@ export interface MainWeatherStationInterface {
   id: string;
   name: string;
   subStations: WeatherStationInterface[];
-  averageTemperature: Ref<number>;
-  totalPrecipitation: Ref<number>;
-  lastUpdate: Ref<Date>;
+  averageTemperature: ComputedRef<number>;
+  totalPrecipitation: ComputedRef<number>;
+  lastUpdate: ComputedRef<Date>;
+  temperature$: Observable<number>;
+  precipitation$: Observable<number>;
 }
 
 export type WeatherDataType = WeatherDataInterface;

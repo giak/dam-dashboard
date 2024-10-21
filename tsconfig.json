@@ -1,7 +1,6 @@
 {
     "compilerOptions": {
         "composite": true,
-        "lib": ["esnext", "dom"],
         "baseUrl": ".",
         "paths": {
             "@/*": ["src/*"],
@@ -14,10 +13,10 @@
             "@utils/*": ["src/utils/*"],
             "@assets/*": ["src/assets/*"],
             "@config/*": ["src/config/*"],
-            "@type/*": ["src/types/*"],
-            "@services/*": ["src/services/*"]
+            "@customTypes/*": ["src/types/*"],
+            "@services/*": ["src/services/*"],
+            "@type/*": ["src/types/*"]
         },
-        "typeRoots": ["src/types", "node_modules/@types"],   
         "target": "ESNext",
         "module": "ESNext",
         "moduleResolution": "bundler",
@@ -35,6 +34,8 @@
         "src/**/*.tsx",
         "src/**/*.vue",
         "src/**/__tests__/**/*.ts"
-     ],
-    "exclude": []
+    ],
+    "exclude": [
+        "node_modules"
+    ]
 }
