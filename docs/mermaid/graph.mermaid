@@ -1,81 +1,34 @@
 graph TD
-    subgraph Composables
-        useWaterSystem
-        useDam
-        useWaterLevelChart
-    end
+    %% Sources de données
+    WS((waterSource$))
+    WEA((weatherSource$))
+    GM((glacierMelt$))
+    WW((wastewaterSource$))
+    UC((userConsumptionSource$))
 
-    subgraph Services
-        damSimulation
-        errorHandlingService
-        loggingService
-    end
+    %% Composables et services
+    WS --> |subscribe| IA[inflowAggregator]
+    WEA --> |subscribe| IA
+    GM --> |subscribe| IA
 
-    subgraph Utilitaires
-        errorHandlerUtil
-    end
+    IA --> |emit| AI{aggregatedInflow$}
+    AI --> |subscribe| UWS[useWaterSystem]
 
-    subgraph Domaine
-        DamInterface
-    end
+    WEA --> |subscribe| UWS[useWaterSystem]
+    UWS --> |emit| SS{systemState$}
 
-    subgraph Composants
-        WaterSystemDashboard
-        DamComponent
-        WaterLevelChart
-        ErrorNotification
-        GlobalErrorHandler
-    end
+    WEA --> |subscribe| UWS[useWeatherStation]
+    UWS --> |emit| WD{weatherData$}
 
-    useWaterSystem -->|utilise| damSimulation
-    useWaterSystem -->|utilise| errorHandlingService
-    useWaterSystem -->|utilise| loggingService
-    useWaterSystem -->|retourne| DamInterface
+    %% Composants
+    SS --> |subscribe| WSD[WaterSystemDashboard]
+    WD --> |subscribe| MWS[MainWeatherStationComponent]
 
-    useDam -->|utilise| errorHandlingService
-    useDam -->|retourne| DamInterface
+    %% Légende
+    classDef observable fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef subject fill:#bbf,stroke:#333,stroke-width:2px;
+    classDef component fill:#dfd,stroke:#333,stroke-width:2px;
 
-    useWaterLevelChart -->|utilise| errorHandlerUtil
-
-    damSimulation -->|crée| DamInterface
-    errorHandlingService -->|émet| ErrorDataInterface
-
-    errorHandlerUtil -->|utilise| errorHandlingService
-
-    WaterSystemDashboard -->|utilise| useWaterSystem
-    WaterSystemDashboard -->|contient| DamComponent
-    WaterSystemDashboard -->|utilise| loggingService
-
-    DamComponent -->|utilise| DamInterface
-    DamComponent -->|contient| WaterLevelChart
-
-    WaterLevelChart -->|utilise| useWaterLevelChart
-
-    ErrorNotification -->|utilise| errorHandlingService
-
-    GlobalErrorHandler -->|utilise| errorHandlingService
-    GlobalErrorHandler -->|contient| ErrorNotification
-
-    subgraph Décorateurs
-        errorHandler
-    end
-
-    errorHandler -->|utilise| errorHandlingService
-
-    subgraph Configuration
-        browserConfig
-    end
-
-    useWaterSystem -->|utilise| browserConfig
-    useDam -->|utilise| browserConfig
-    damSimulation -->|utilise| browserConfig
-
-    subgraph Tests
-        WaterSystemDashboard.spec
-        useWaterSystem.spec
-        useDam.spec
-    end
-
-    WaterSystemDashboard.spec -->|teste| WaterSystemDashboard
-    useWaterSystem.spec -->|teste| useWaterSystem
-    useDam.spec -->|teste| useDam
+    class WS,WEA,GM,WW,UC observable;
+    class AI,SS,WD subject;
+    class WSD,MWS component;

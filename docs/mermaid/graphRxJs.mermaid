@@ -1,41 +1,107 @@
 graph TD
-    %% Observables
-    DamState[DamState Observable<br><b>useDam.ts</b>] -->|map| CurrentWaterLevel[CurrentWaterLevel Observable<br><b>useDam.ts</b>]
-    DamState -->|map| OutflowRate[OutflowRate Observable<br><b>useDam.ts</b>]
-    DamState -->|map| InflowRate[InflowRate Observable<br><b>useDam.ts</b>]
-    ErrorSubject[Error Subject<br><b>errorHandlingService.ts</b>] -->|asObservable| ErrorObservable[Error Observable<br><b>errorHandlingService.ts</b>]
+    %% Sources de données
+    WS((Observable<br>waterSource$)) --> DM[Operator<br>useDamManagement]
+    WEA((Observable<br>weatherSource$)) --> DM
+    GM((Observable<br>glacierMelt$)) --> DM
+    WEA --> WS[Operator<br>useWeatherSimulation]
+    WS --> |emit| weatherSimulation$
 
-    %% Operators and Transformations
-    CurrentWaterLevel -->|distinctUntilChanged| DistinctWaterLevel[Distinct Water Level<br><b>useDam.ts</b>]
-    OutflowRate -->|distinctUntilChanged| DistinctOutflow[Distinct Outflow<br><b>useDam.ts</b>]
-    InflowRate -->|distinctUntilChanged| DistinctInflow[Distinct Inflow<br><b>useDam.ts</b>]
+    %% Sous-systèmes
+    DM --> |emit| SharedDam{{"BehaviorSubject<br>sharedDam$"}}
+    SharedDam --> PP[Operator<br>usePowerPlant]
+    SharedDam --> WP[Operator<br>useWaterPurification]
+    SharedDam --> WD[Operator<br>useWaterDistribution]
+    SharedDam --> FP[Operator<br>useFloodPrediction]
+    
+    WP --> |emit| SharedPurification{{"BehaviorSubject<br>sharedPurificationPlant$"}}
+    PP --> |emit| SharedPower{{"BehaviorSubject<br>sharedPowerPlant$"}}
+    
+    SharedPurification --> IR[Operator<br>useIrrigation]
+    WEA --> IR
+    IR --> |emit| SharedIrrigation{{"BehaviorSubject<br>sharedIrrigation$"}}
+    
+    WW((Observable<br>wastewaterSource$)) --> WT[Operator<br>useWastewaterTreatment]
+    WT --> |emit| SharedWastewater{{"BehaviorSubject<br>sharedWastewaterTreatment$"}}
+    
+    SharedPurification --> WQ[Operator<br>useWaterQualityControl]
+    SharedWastewater --> WQ
+    WEA --> WQ
+    WQ --> |emit| SharedWaterQuality{{"BehaviorSubject<br>sharedWaterQualityControl$"}}
+    
+    SharedDam --> FP
+    WEA --> FP
+    FP --> |emit| SharedFloodPrediction{{"BehaviorSubject<br>sharedFloodPrediction$"}}
+    
+    UC((Observable<br>userConsumptionSource$)) --> UW[Operator<br>useUserWaterManagement]
+    SharedWaterQuality --> UW
+    WEA --> UW
+    UW --> |emit| SharedUserWater{{"BehaviorSubject<br>sharedUserWaterManagement$"}}
+    
+    WD --> |emit| SharedWaterDistribution{{"BehaviorSubject<br>sharedWaterDistribution$"}}
 
-    %% Combine Latest for System State
-    DistinctWaterLevel -->|combineLatest| SystemState[System State<br><b>useWaterSystem.ts</b>]
-    DistinctOutflow --> SystemState
-    DistinctInflow --> SystemState
+    %% Système d'alertes
+    SharedDam --> |pipe: filter & map| AlertDam[Dam Alert]
+    SharedWaterQuality --> |pipe: filter & map| AlertWaterQuality[Water Quality Alert]
+    SharedFloodPrediction --> |pipe: filter & map| AlertFlood[Flood Alert]
+    SharedWaterDistribution --> |pipe: filter & map| AlertDistribution[Distribution Alert]
+    SharedIrrigation --> |pipe: filter & map| AlertIrrigation[Irrigation Alert]
+    SharedPower --> |pipe: filter & map| AlertPower[Power Alert]
+    SharedUserWater --> |pipe: filter & map| AlertUserWater[User Water Alert]
+    SharedGlacierMelt --> |pipe: filter & map| AlertGlacier[Glacier Alert]
+    
+    AlertDam --> MergeOp[Operator<br>Merge]
+    AlertWaterQuality --> MergeOp
+    AlertFlood --> MergeOp
+    AlertDistribution --> MergeOp
+    AlertIrrigation --> MergeOp
+    AlertPower --> MergeOp
+    AlertUserWater --> MergeOp
+    AlertGlacier --> MergeOp
+    
+    MergeOp -->|pipe: tap| AddAlert[Add Alert]
+    MergeOp -->|pipe: shareReplay| AlertSystem{{"BehaviorSubject<br>alertSystem$"}}
+    
+    %% Mise à jour de l'état
+    SharedDam -->|pipe: optimizedSubscribe| UpdateState[Update State]
+    SharedPurification -->|pipe: optimizedSubscribe| UpdateState
+    SharedPower -->|pipe: optimizedSubscribe| UpdateState
+    SharedWaterDistribution -->|pipe: optimizedSubscribe| UpdateState
+    weatherSimulation$ -->|pipe: optimizedSubscribe| UpdateState
+    SharedIrrigation -->|pipe: optimizedSubscribe| UpdateState
+    SharedWastewater -->|pipe: optimizedSubscribe| UpdateState
+    SharedWaterQuality -->|pipe: optimizedSubscribe| UpdateState
+    SharedFloodPrediction -->|pipe: optimizedSubscribe| UpdateState
+    SharedUserWater -->|pipe: optimizedSubscribe| UpdateState
+    SharedGlacierMelt -->|pipe: optimizedSubscribe| UpdateState
+    
+    UpdateState --> SystemState[(Observer<br>Water System State)]
+    
+    AlertSystem -->|subscribe| HandleAlerts[(Observer<br>Handle Alerts)]
 
-    %% Error Handling
-    SystemState -->|catchError| ErrorHandler[Error Handler<br><b>errorHandlerUtil.ts</b>]
-    ErrorHandler -->|emitError| ErrorSubject
+     %% Légende
+    classDef observable fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef shared fill:#bbf,stroke:#333,stroke-width:2px;
+    classDef operator fill:#dfd,stroke:#333,stroke-width:2px;
+    classDef output fill:#dfd,stroke:#333,stroke-width:2px;
+    
+    class WS,WEA,GM,WW,UC observable;
+    class SharedDam,SharedPurification,SharedPower,SharedIrrigation,SharedWastewater,SharedWaterQuality,SharedFloodPrediction,SharedUserWater,SharedWaterDistribution,SharedGlacierMelt shared;
+    class MergeOp operator;
+    class SystemState,HandleAlerts output;
 
-    %% Outputs to UI Components
-    SystemState -->|subscribe| WaterSystemDashboard[(Water System Dashboard<br><b>WaterSystemDashboard.vue</b>)]
-    DistinctWaterLevel -->|subscribe| WaterLevelChart[(Water Level Chart<br><b>WaterLevelChart.vue</b>)]
-    ErrorObservable -->|subscribe| ErrorNotification[(Error Notification<br><b>ErrorNotification.vue</b>)]
+    subgraph Légende
+    direction LR
+        O((Observable)) --- SharedO{{"Observable partagé"}}
+        SharedO --- Operator[Opérateur]
+        Operator --- Output[(Sortie)]
+    end
 
-    %% Triggers
-    UserInput[User Input<br><b>initializeDam</b><br><b>useWaterSystem.ts</b>] -.->|initializeDam| DamState
-    Interval[Interval Timer<br><b>damSimulation.ts</b>] -.->|updateDamState| DamState
-
-    %% Annotations
-    classDef annotation fill:#f9f,stroke:#333,stroke-width:2px;
-    class MapAnnotation,FilterAnnotation,CombineAnnotation annotation;
-
-    MapAnnotation[Map: Extract specific properties<br><b>useDam.ts</b>]
-    FilterAnnotation[Filter: Remove duplicate values<br><b>useDam.ts</b>]
-    CombineAnnotation[Combine: Merge latest values<br><b>useWaterSystem.ts</b>]
-
-    DamState --> MapAnnotation
-    DistinctWaterLevel --> FilterAnnotation
-    SystemState --> CombineAnnotation
+    classDef observable fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef shared fill:#bbf,stroke:#333,stroke-width:2px;
+    classDef operator fill:#dfd,stroke:#333,stroke-width:2px;
+    classDef output fill:#ffd,stroke:#333,stroke-width:2px;
+    
+    class O observable;
+    class SharedO shared;
+    class Operator operator;
+    class Output output;
