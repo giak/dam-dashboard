@@ -3,26 +3,13 @@ import { createGlacierSimulation } from '@services/glacierSimulation';
 import { loggingService } from '@services/loggingService';
 import type { GlacierStateInterface, GlacierUpdateInterface, UseGlacierReturnInterface } from '@type/glacier/GlacierInterface';
 import { GlacierValidationError, validateGlacierUpdate } from '@utils/glacier/glacierUtils';
+import { memoize } from '@utils/memoize';
+import { map, Observable, shareReplay, Subject, takeUntil } from 'rxjs';
 import { computed, onUnmounted, ref } from 'vue';
-import { Observable, Subject, takeUntil, map, shareReplay } from 'rxjs';
 
 interface GlacierDependenciesInterface {
   loggingService: typeof loggingService;
   errorHandlingService: typeof errorHandlingService;
-}
-
-// Fonction de mémoïsation
-function memoize<T extends (...args: any[]) => any>(fn: T): T {
-  const cache = new Map();
-  return ((...args: Parameters<T>): ReturnType<T> => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) {
-      return cache.get(key);
-    }
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
-  }) as T;
 }
 
 export function useGlacier(

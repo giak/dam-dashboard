@@ -1,10 +1,11 @@
+import { errorHandlingService } from '@services/errorHandlingService';
 import type { AggregatedInflowInterface } from '@services/inflowAggregator';
 import { loggingService } from '@services/loggingService';
 import type { DamActionsInterface, DamInterface, DamObservablesInterface, DamUpdateInterface, UseDamReturnInterface } from '@type/dam/DamInterface';
 import { DamValidationError, updateDamState, validateDamUpdate } from '@utils/dam/damUtils';
 import { handleObservableError } from '@utils/errorHandlerUtil';
+import { memoize } from '@utils/memoize';
 import { BehaviorSubject, Observable, Subject, catchError, distinctUntilChanged, map, shareReplay, takeUntil } from 'rxjs';
-import { errorHandlingService } from '@services/errorHandlingService';
 
 /**
  * Interface définissant les dépendances injectables pour la simulation du barrage.
@@ -88,20 +89,6 @@ function createDamSimulation(damState$: BehaviorSubject<DamInterface>, aggregate
   };
 
   return { startSimulation, simulateStep };
-}
-
-// Memoization function for expensive calculations
-function memoize<T extends (...args: any[]) => any>(fn: T): T {
-  const cache = new Map();
-  return ((...args: Parameters<T>): ReturnType<T> => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) {
-      return cache.get(key);
-    }
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
-  }) as T;
 }
 
 /**

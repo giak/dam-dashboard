@@ -2,29 +2,16 @@ import { errorHandlingService } from '@services/errorHandlingService';
 import { loggingService } from '@services/loggingService';
 import { createRiverSimulation, type RiverSimulationInterface } from '@services/riverSimulation';
 import type { RiverStateInterface, RiverUpdateInterface, UseRiverReturnInterface } from '@type/river/RiverInterface';
+import { memoize } from '@utils/memoize';
 import { RiverValidationError, validateRiverUpdate } from '@utils/river/riverUtils';
 import { BehaviorSubject, Observable, Subject } from 'rxjs';
-import { takeUntil, shareReplay, map } from 'rxjs/operators';
+import { map, shareReplay, takeUntil } from 'rxjs/operators';
 import { computed, onUnmounted, ref } from 'vue';
 
 interface RiverDependenciesInterface {
   loggingService: typeof loggingService;
   errorHandlingService: typeof errorHandlingService;
   createRiverSimulation: typeof createRiverSimulation;
-}
-
-// Fonction de mémoïsation
-function memoize<T extends (...args: any[]) => any>(fn: T): T {
-  const cache = new Map();
-  return ((...args: Parameters<T>): ReturnType<T> => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) {
-      return cache.get(key);
-    }
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
-  }) as T;
 }
 
 export function useRiver(
