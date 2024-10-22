@@ -1,80 +1,110 @@
+import { errorHandlingService } from '@services/errorHandlingService';
 import { loggingService } from '@services/loggingService';
-import type { RiverStateInterface } from '@type/river/RiverStateInterface';
-import { BehaviorSubject, interval, Observable, Subscription } from 'rxjs';
-import { map, takeUntil, withLatestFrom } from 'rxjs/operators';
+import { createRiverSimulation, type RiverSimulationInterface } from '@services/riverSimulation';
+import type { RiverStateInterface, RiverUpdateInterface, UseRiverReturnInterface } from '@type/river/RiverInterface';
+import { RiverValidationError, validateRiverUpdate } from '@utils/river/riverUtils';
+import { BehaviorSubject, Observable, Subject } from 'rxjs';
+import { takeUntil, shareReplay, map } from 'rxjs/operators';
 import { computed, onUnmounted, ref } from 'vue';
 
-const SIMULATION_INTERVAL = 1000; // 1 second
-const BASE_FLOW_RATE = 10; // Base flow rate in m³/s
-const PRECIPITATION_IMPACT_FACTOR = 0.5; // How much precipitation affects flow rate
+interface RiverDependenciesInterface {
+  loggingService: typeof loggingService;
+  errorHandlingService: typeof errorHandlingService;
+  createRiverSimulation: typeof createRiverSimulation;
+}
+
+// Fonction de mémoïsation
+function memoize<T extends (...args: any[]) => any>(fn: T): T {
+  const cache = new Map();
+  return ((...args: Parameters<T>): ReturnType<T> => {
+    const key = JSON.stringify(args);
+    if (cache.has(key)) {
+      return cache.get(key);
+    }
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  }) as T;
+}
 
 export function useRiver(
   initialData: RiverStateInterface,
-  precipitation$: Observable<number>
-) {
-  const riverState = ref<RiverStateInterface>(initialData);
-  const outflowRate$ = new BehaviorSubject<number>(initialData.flowRate);
-
-  let simulationSubscription: Subscription | null = null;
-
-  const updateRiverState = (precipitationMm: number) => {
-    const currentState = riverState.value;
-    const adjustedFlowRate = BASE_FLOW_RATE + (precipitationMm * PRECIPITATION_IMPACT_FACTOR);
-    
-    const newWaterVolume = currentState.waterVolume + (precipitationMm * currentState.catchmentArea / 1000); // Convert mm to m³
-    const newFlowRate = adjustedFlowRate;
-
-    riverState.value = {
-      ...currentState,
-      waterVolume: newWaterVolume,
-      flowRate: newFlowRate,
-      lastUpdated: new Date()
-    };
-
-    outflowRate$.next(newFlowRate);
-
-    loggingService.info('River state updated', 'useRiver', { 
-      id: riverState.value.id,
-      waterVolume: newWaterVolume,
-      flowRate: newFlowRate
-    });
+  precipitation$: Observable<number>,
+  injectedDependencies?: Partial<RiverDependenciesInterface>
+): UseRiverReturnInterface {
+  const deps: RiverDependenciesInterface = {
+    loggingService,
+    errorHandlingService,
+    createRiverSimulation,
+    ...injectedDependencies
   };
+
+  const destroy$ = new Subject<void>();
+  const riverSimulation: RiverSimulationInterface = deps.createRiverSimulation(initialData, precipitation$);
+  
+  const sharedRiverState$ = riverSimulation.riverState$.pipe(
+    takeUntil(destroy$),
+    shareReplay(1)
+  );
+
+  const riverState = ref<RiverStateInterface>(initialData);
+
+  sharedRiverState$.subscribe(state => {
+    riverState.value = state;
+  });
+
+  const memoizedUpdateState = memoize(riverSimulation.updateState);
 
   const startSimulation = () => {
-    if (simulationSubscription) {
-      simulationSubscription.unsubscribe();
-    }
-
-    simulationSubscription = interval(SIMULATION_INTERVAL).pipe(
-      takeUntil(new Observable(() => () => cleanup())),
-      withLatestFrom(precipitation$),
-      map(([, precipitation]) => precipitation)
-    ).subscribe(updateRiverState);
-
-    loggingService.info('River simulation started', 'useRiver', { id: riverState.value.id });
+    const stopSimulation = riverSimulation.startSimulation();
+    deps.loggingService.info('River simulation started', 'useRiver', { id: riverState.value.id });
+    return () => {
+      stopSimulation();
+      deps.loggingService.info('River simulation stopped', 'useRiver', { id: riverState.value.id });
+    };
   };
 
-  const stopSimulation = () => {
-    if (simulationSubscription) {
-      simulationSubscription.unsubscribe();
-      simulationSubscription = null;
-      loggingService.info('River simulation stopped', 'useRiver', { id: riverState.value.id });
+  const updateRiver = (update: RiverUpdateInterface): void => {
+    try {
+      validateRiverUpdate(update);
+      const currentState = riverState.value;
+      const newState = { ...currentState, ...update, lastUpdated: new Date() };
+      (riverSimulation.riverState$ as BehaviorSubject<RiverStateInterface>).next(newState);
+    } catch (error) {
+      if (error instanceof RiverValidationError) {
+        deps.errorHandlingService.emitError({
+          message: 'Error updating river state',
+          code: 'RIVER_UPDATE_ERROR',
+          timestamp: Date.now(),
+          context: 'useRiver.updateRiver'
+        });
+      }
+      throw error;
     }
   };
 
-  const cleanup = () => {
-    stopSimulation();
-    outflowRate$.complete();
-    loggingService.info('River resources cleaned up', 'useRiver', { id: riverState.value.id });
+  const cleanup = (): void => {
+    destroy$.next();
+    destroy$.complete();
+    riverSimulation.cleanup();
+    deps.loggingService.info('River resources cleaned up', 'useRiver', { id: riverState.value.id });
   };
 
   onUnmounted(cleanup);
 
+  // Computed properties for derived values
+  const flowRate = computed(() => riverState.value.flowRate);
+  const waterVolume = computed(() => riverState.value.waterVolume);
+
   return {
     riverState: computed(() => riverState.value),
-    outflowRate$: outflowRate$.asObservable(),
+    riverState$: sharedRiverState$,
+    outflowRate$: sharedRiverState$.pipe(map(state => state.flowRate)),
+    flowRate,
+    waterVolume,
     startSimulation,
-    stopSimulation,
-    cleanup
+    updateRiver,
+    cleanup,
+    _updateRiverState: memoizedUpdateState
   };
 }
