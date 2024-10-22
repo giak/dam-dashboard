@@ -13,6 +13,8 @@ export interface ErrorDataInterface {
   timestamp: number;
   /** Contexte dans lequel l'erreur s'est produite */
   context?: unknown;
+  /** Données supplémentaires liées à l'erreur */
+  data?: unknown;
 }
 
 /**

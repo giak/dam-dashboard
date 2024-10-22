@@ -26,28 +26,29 @@ import DamComponent from '@components/dam/DamComponent.vue';
 import GlacierComponent from '@components/glacier/GlacierComponent.vue';
 import RiverComponent from '@components/river/RiverComponent.vue';
 import MainWeatherStationComponent from '@components/weather/MainWeatherStationComponent.vue';
-import { useWaterSystem } from '@composables/useWaterSystem';
+import { createWaterSystem } from '@factories/waterSystemFactory';
+import { createDamService } from '@services/damService';
+import { errorHandlingService } from '@services/errorHandlingService';
+import { createGlacierService } from '@services/glacierService';
+import { createRiverService } from '@services/riverService';
+import { createWeatherService } from '@services/weatherService';
 import type { DamInterface } from '@type/dam/DamInterface';
 import type { GlacierStateInterface } from '@type/glacier/GlacierStateInterface';
 import type { RiverStateInterface } from '@type/river/RiverStateInterface';
 import type { Latitude, Longitude, MainWeatherStationInterface } from '@type/weather/WeatherStationInterface';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { errorHandlingService } from '@services/errorHandlingService';
+
+const waterSystem = createWaterSystem({
+  createDamService,
+  createGlacierService,
+  createRiverService,
+  createWeatherService
+});
 
 const damState = ref<DamInterface | null>(null);
 const glacierState = ref<GlacierStateInterface | null>(null);
 const riverState = ref<RiverStateInterface | null>(null);
 const mainWeatherState = ref<MainWeatherStationInterface | null>(null);
-
-const {
-  initializeDam,
-  initializeGlacier,
-  initializeRiver,
-  initializeMainWeatherStation,
-  systemState$,
-  cleanup,
-  error$
-} = useWaterSystem();
 
 // Computed properties for MainWeatherStationComponent
 const averageTemperature = computed(() => mainWeatherState.value?.averageTemperature || 0);
@@ -70,13 +71,13 @@ const totalWaterVolume = computed(() => {
 
 onMounted(() => {
   // Initialize the main weather station
-  initializeMainWeatherStation('main-station', 'Station Météo Principale', [
+  waterSystem.initializeMainWeatherStation('main-station', 'Station Météo Principale', [
     { id: 'sub1', name: 'Sous-station 1', latitude: 45.5 as Latitude, longitude: -73.5 as Longitude, elevation: 100 },
     { id: 'sub2', name: 'Sous-station 2', latitude: 46.5 as Latitude, longitude: -74.5 as Longitude, elevation: 200 }
   ]);
 
   // Initialize the dam, glacier, and river
-  initializeDam({
+  waterSystem.initializeDam({
     id: 'dam1',
     name: 'Barrage Principal',
     currentWaterLevel: 50,
@@ -88,7 +89,7 @@ onMounted(() => {
     maxCapacity: 1000000
   });
 
-  initializeGlacier({
+  waterSystem.initializeGlacier({
     id: 'glacier1',
     name: 'Glacier Principal',
     volume: 1000000,
@@ -101,7 +102,7 @@ onMounted(() => {
     flow: 10
   });
 
-  initializeRiver({
+  waterSystem.initializeRiver({
     id: 'river1',
     name: 'Rivière Principale',
     flowRate: 20,
@@ -114,7 +115,7 @@ onMounted(() => {
   });
 
   // Subscribe to system state updates
-  const subscription = systemState$.subscribe({
+  const subscription = waterSystem.systemState$.subscribe({
     next: (state) => {
       damState.value = state.dam;
       glacierState.value = state.glacier;
@@ -139,7 +140,7 @@ onMounted(() => {
   onUnmounted(() => {
     subscription.unsubscribe();
     errorSubscription.unsubscribe();
-    cleanup();
+    waterSystem.cleanup();
   });
 });
 </script>

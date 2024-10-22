@@ -15,7 +15,9 @@
             "@config/*": ["src/config/*"],
             "@customTypes/*": ["src/types/*"],
             "@services/*": ["src/services/*"],
-            "@type/*": ["src/types/*"]
+            "@type/*": ["src/types/*"],
+            "@interfaces/*": ["src/interfaces/*"],
+            "@factories/*": ["src/factories/*"]
         },
         "target": "ESNext",
         "module": "ESNext",

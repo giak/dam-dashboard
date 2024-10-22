@@ -24,6 +24,8 @@ export default defineConfig({
       '@config': path.resolve(__dirname, './src/config'),
       '@type': path.resolve(__dirname, './src/types'),
       '@services': path.resolve(__dirname, './src/services'),
+      '@interfaces': path.resolve(__dirname, './src/interfaces'),
+      '@factories': path.resolve(__dirname, './src/factories')
     },
   },
 });

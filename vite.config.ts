@@ -21,7 +21,9 @@ export default defineConfig(({ mode }) => {
         '@config': path.resolve(__dirname, './src/config'),
         '@customTypes': path.resolve(__dirname, './src/types'),
         '@services': path.resolve(__dirname, './src/services'),
-        '@type': path.resolve(__dirname, './src/types')
+        '@type': path.resolve(__dirname, './src/types'),
+        '@interfaces': path.resolve(__dirname, './src/interfaces'),
+        '@factories': path.resolve(__dirname, './src/factories')
       },
     },
     define: {
