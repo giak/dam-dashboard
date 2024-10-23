@@ -1,17 +1,19 @@
-import type { WaterSystemInterface } from '@type/waterSystem';
-import type { DamServiceInterface } from '@services/damService';
-import type { GlacierServiceInterface } from '@services/glacierService';
-import type { RiverServiceInterface } from '@services/riverService';
-import type { WeatherServiceInterface } from '@services/weatherService';
 import { useWaterSystem } from '@composables/useWaterSystem';
+import { errorHandlingService } from '@services/errorHandlingService';
+import { createInflowAggregator } from '@services/inflowAggregator';
+import { loggingService } from '@services/loggingService';
+import type { WaterSystemInterface } from '@type/waterSystem';
 
-export interface WaterSystemDependencies {
+export interface WaterSystemDependenciesInterface {
   createDamService: typeof import('@services/damService').createDamService;
   createGlacierService: typeof import('@services/glacierService').createGlacierService;
   createRiverService: typeof import('@services/riverService').createRiverService;
   createWeatherService: typeof import('@services/weatherService').createWeatherService;
+  errorHandlingService: typeof errorHandlingService;
+  loggingService: typeof loggingService;
+  createInflowAggregator: typeof createInflowAggregator;
 }
 
-export function createWaterSystem(dependencies: WaterSystemDependencies): WaterSystemInterface {
+export function createWaterSystem(dependencies: WaterSystemDependenciesInterface): WaterSystemInterface {
   return useWaterSystem(dependencies);
 }

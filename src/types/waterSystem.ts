@@ -3,6 +3,7 @@ import type { GlacierStateInterface } from '@type/glacier/GlacierStateInterface'
 import type { RiverStateInterface } from '@type/river/RiverStateInterface';
 import type { MainWeatherStationInterface, WeatherStationInterface } from '@type/weather/WeatherStationInterface';
 import type { Observable } from 'rxjs';
+import type { ErrorDataInterface } from '@services/errorHandlingService';
 
 export interface SystemStateInterface {
   dam: DamInterface | null;
@@ -23,5 +24,5 @@ export interface WaterSystemInterface {
   systemState$: Observable<SystemStateInterface>;
   totalWaterVolume$: Observable<number>;
   cleanup: () => void;
-  error$: Observable<string | null>;
+  error$: Observable<ErrorDataInterface | null>;
 }

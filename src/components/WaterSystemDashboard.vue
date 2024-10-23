@@ -28,10 +28,12 @@ import RiverComponent from '@components/river/RiverComponent.vue';
 import MainWeatherStationComponent from '@components/weather/MainWeatherStationComponent.vue';
 import { createWaterSystem } from '@factories/waterSystemFactory';
 import { createDamService } from '@services/damService';
-import { errorHandlingService } from '@services/errorHandlingService';
 import { createGlacierService } from '@services/glacierService';
 import { createRiverService } from '@services/riverService';
 import { createWeatherService } from '@services/weatherService';
+import { errorHandlingService } from '@services/errorHandlingService';
+import { loggingService } from '@services/loggingService';
+import { createInflowAggregator } from '@services/inflowAggregator';
 import type { DamInterface } from '@type/dam/DamInterface';
 import type { GlacierStateInterface } from '@type/glacier/GlacierStateInterface';
 import type { RiverStateInterface } from '@type/river/RiverStateInterface';
@@ -42,7 +44,10 @@ const waterSystem = createWaterSystem({
   createDamService,
   createGlacierService,
   createRiverService,
-  createWeatherService
+  createWeatherService,
+  errorHandlingService,
+  loggingService,
+  createInflowAggregator
 });
 
 const damState = ref<DamInterface | null>(null);
@@ -138,8 +143,6 @@ onMounted(() => {
 
   // Cleanup function
   onUnmounted(() => {
-    subscription.unsubscribe();
-    errorSubscription.unsubscribe();
     waterSystem.cleanup();
   });
 });
