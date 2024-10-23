@@ -1,9 +1,11 @@
+import type { ErrorDataInterface } from '@services/errorHandlingService';
+import type { createInflowAggregator } from '@services/inflowAggregator';
+import type { loggingService } from '@services/loggingService';
 import type { DamInterface } from '@type/dam/DamInterface';
 import type { GlacierStateInterface } from '@type/glacier/GlacierStateInterface';
 import type { RiverStateInterface } from '@type/river/RiverStateInterface';
 import type { MainWeatherStationInterface, WeatherStationInterface } from '@type/weather/WeatherStationInterface';
 import type { Observable } from 'rxjs';
-import type { ErrorDataInterface } from '@services/errorHandlingService';
 
 export interface SystemStateInterface {
   dam: DamInterface | null;
@@ -25,4 +27,14 @@ export interface WaterSystemInterface {
   totalWaterVolume$: Observable<number>;
   cleanup: () => void;
   error$: Observable<ErrorDataInterface | null>;
+}
+
+export interface WaterSystemDependenciesInterface {
+  createDamService: typeof import('@services/damService').createDamService;
+  createGlacierService: typeof import('@services/glacierService').createGlacierService;
+  createRiverService: typeof import('@services/riverService').createRiverService;
+  createWeatherService: typeof import('@services/weatherService').createWeatherService;
+  errorHandlingService: typeof import('@services/errorHandlingService').errorHandlingService;
+  loggingService: typeof loggingService;
+  createInflowAggregator: typeof createInflowAggregator;
 }
