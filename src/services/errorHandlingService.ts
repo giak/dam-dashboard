@@ -1,4 +1,5 @@
 import { Observable, Subject } from "rxjs";
+import { loggingService } from './loggingService';
 
 /**
  * Interface décrivant la structure des données d'erreur.
@@ -21,7 +22,7 @@ export interface ErrorDataInterface {
  * Service de gestion centralisée des erreurs.
  * Ce service permet d'émettre et d'observer les erreurs de manière globale dans l'application.
  */
-class ErrorHandlingService {
+export class ErrorHandlingService {
   /** Subject privé pour gérer le flux d'erreurs */
   private errorSubject: Subject<ErrorDataInterface> = new Subject<ErrorDataInterface>();
 
@@ -84,3 +85,6 @@ class ErrorHandlingService {
 
 /** Instance unique exportée du service de gestion des erreurs */
 export const errorHandlingService = new ErrorHandlingService();
+
+// Initialiser la connexion entre les services après leur création
+loggingService.setErrorHandlingService(errorHandlingService);

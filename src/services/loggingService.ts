@@ -1,4 +1,4 @@
-import { errorHandlingService, type ErrorDataInterface } from './errorHandlingService';
+import { ErrorHandlingService, type ErrorDataInterface } from './errorHandlingService';
 
 /**
  * Énumération des niveaux de log disponibles.
@@ -25,10 +25,16 @@ interface LogEntryInterface {
  * Ce service permet de consigner des logs de différents niveaux et de les afficher dans la console.
  * Il s'intègre également avec le service de gestion des erreurs pour consigner automatiquement les erreurs.
  */
-class LoggingService {
+export class LoggingService {
   private logs: LogEntryInterface[] = [];
+  private errorHandlingService: ErrorHandlingService | null = null;
 
   constructor() {
+    // Le constructeur ne prend plus de paramètre
+  }
+
+  public setErrorHandlingService(service: ErrorHandlingService) {
+    this.errorHandlingService = service;
     this.subscribeToErrors();
   }
 
@@ -36,11 +42,13 @@ class LoggingService {
    * S'abonne au flux d'erreurs du service de gestion des erreurs pour les consigner automatiquement.
    */
   private subscribeToErrors() {
-    errorHandlingService.getErrorObservable().subscribe((error: ErrorDataInterface | null) => {
-      if (error) {
-        this.error(error.message, error.context as string, { code: error.code });
-      }
-    });
+    if (this.errorHandlingService) {
+      this.errorHandlingService.getErrorObservable().subscribe((error: ErrorDataInterface | null) => {
+        if (error) {
+          this.error(error.message, error.context as string, { code: error.code });
+        }
+      });
+    }
   }
 
   /**

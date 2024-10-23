@@ -5,9 +5,9 @@ import type { SystemStateInterface, WaterSystemDependenciesInterface, WaterSyste
 import type { MainWeatherStationInterface } from '@type/weather/WeatherStationInterface';
 import { handleWaterSystemError } from '@utils/errorHandlerUtil';
 import { initializeDam, initializeGlacier, initializeMainWeatherStation, initializeRiver } from '@utils/initializationUtils';
-import { calculateTotalWaterVolumeUtil, createServicesUtil, createStatesUtil, createTotalInflowObservableUtil } from '@utils/waterSystemUtils';
-import { BehaviorSubject, combineLatest, Observable, Subject } from 'rxjs';
-import { catchError, distinctUntilChanged, map, shareReplay, takeUntil } from 'rxjs/operators';
+import { calculateTotalWaterVolumeUtil, createServicesUtil, createStatesUtil, createTotalInflowObservableUtil, subscribeToState } from '@utils/waterSystemUtils';
+import { BehaviorSubject, Observable, Subject, combineLatest } from 'rxjs';
+import { catchError, distinctUntilChanged, map, shareReplay } from 'rxjs/operators';
 import { onUnmounted } from 'vue';
 
 export function createSystemStateObservable(
@@ -47,7 +47,7 @@ export function useWaterSystem(dependencies: WaterSystemDependenciesInterface): 
   const services = createServicesUtil();
   const states = createStatesUtil();
   const { addSource, aggregatedInflow$ } = dependencies.createInflowAggregator([]);
-  const totalInflow$ = createTotalInflowObservableUtil(aggregatedInflow$);
+  const totalInflow$ = createTotalInflowObservableUtil(aggregatedInflow$).pipe(shareReplay(1));
   const destroy$ = new Subject<void>();
 
   const errorHandler = (context: string, error: any) => 
@@ -60,52 +60,37 @@ export function useWaterSystem(dependencies: WaterSystemDependenciesInterface): 
     mainWeather: null
   });
 
-  const totalWaterVolume$ = createTotalWaterVolumeObservable(
-    states.damState$,
-    states.riverState$,
-    errorHandler
+  // Mémoïsation du calcul du volume total d'eau
+  const memoizedCalculateTotalWaterVolume = (() => {
+    let lastDam: DamInterface | null = null;
+    let lastRiver: RiverStateInterface | null = null;
+    let lastResult: number | null = null;
+
+    return (dam: DamInterface | null, river: RiverStateInterface | null) => {
+      if (dam === lastDam && river === lastRiver && lastResult !== null) {
+        return lastResult;
+      }
+      lastDam = dam;
+      lastRiver = river;
+      lastResult = calculateTotalWaterVolumeUtil(dam, river);
+      return lastResult;
+    };
+  })();
+
+  const totalWaterVolume$ = combineLatest([states.damState$, states.riverState$]).pipe(
+    map(([dam, river]) => memoizedCalculateTotalWaterVolume(dam, river)),
+    distinctUntilChanged(),
+    catchError(error => {
+      errorHandler('useWaterSystem.totalWaterVolume$', error);
+      return new Observable<number>();
+    }),
+    shareReplay(1)
   );
 
-  const updateSystemState = (key: keyof SystemStateInterface, value: any) => {
-    const currentState = systemState$.getValue();
-    systemState$.next({ ...currentState, [key]: value });
-  };
-
-  states.damState$.pipe(
-    takeUntil(destroy$),
-    distinctUntilChanged(),
-    catchError(error => {
-      errorHandler('useWaterSystem.damState$', error);
-      return new Observable<DamInterface | null>();
-    })
-  ).subscribe(damState => updateSystemState('dam', damState));
-
-  states.glacierState$.pipe(
-    takeUntil(destroy$),
-    distinctUntilChanged(),
-    catchError(error => {
-      errorHandler('useWaterSystem.glacierState$', error);
-      return new Observable<GlacierStateInterface | null>();
-    })
-  ).subscribe(glacierState => updateSystemState('glacier', glacierState));
-
-  states.riverState$.pipe(
-    takeUntil(destroy$),
-    distinctUntilChanged(),
-    catchError(error => {
-      errorHandler('useWaterSystem.riverState$', error);
-      return new Observable<RiverStateInterface | null>();
-    })
-  ).subscribe(riverState => updateSystemState('river', riverState));
-
-  states.mainWeatherState$.pipe(
-    takeUntil(destroy$),
-    distinctUntilChanged(),
-    catchError(error => {
-      errorHandler('useWaterSystem.mainWeatherState$', error);
-      return new Observable<MainWeatherStationInterface | null>();
-    })
-  ).subscribe(mainWeatherState => updateSystemState('mainWeather', mainWeatherState));
+  subscribeToState(states.damState$, 'dam', systemState$, destroy$, errorHandler);
+  subscribeToState(states.glacierState$, 'glacier', systemState$, destroy$, errorHandler);
+  subscribeToState(states.riverState$, 'river', systemState$, destroy$, errorHandler);
+  subscribeToState(states.mainWeatherState$, 'mainWeather', systemState$, destroy$, errorHandler);
 
   const cleanup = () => {
     destroy$.next();
@@ -128,9 +113,9 @@ export function useWaterSystem(dependencies: WaterSystemDependenciesInterface): 
     initializeGlacier: (initialData) => initializeGlacier(initialData, services, states, addSource, destroy$, dependencies),
     initializeRiver: (initialData) => initializeRiver(initialData, services, states, addSource, destroy$, dependencies),
     initializeMainWeatherStation: (id, name, subStationConfigs) => initializeMainWeatherStation(id, name, subStationConfigs, services, states, destroy$, dependencies),
-    systemState$: systemState$.asObservable(),
+    systemState$: systemState$.asObservable().pipe(shareReplay(1)),
     totalWaterVolume$,
     cleanup,
-    error$: dependencies.errorHandlingService.getErrorObservable()
+    error$: dependencies.errorHandlingService.getErrorObservable().pipe(shareReplay(1))
   };
 }

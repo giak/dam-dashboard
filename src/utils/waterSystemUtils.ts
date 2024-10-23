@@ -6,8 +6,9 @@ import type { DamInterface } from '@type/dam/DamInterface';
 import type { GlacierStateInterface } from '@type/glacier/GlacierStateInterface';
 import type { RiverStateInterface } from '@type/river/RiverStateInterface';
 import type { MainWeatherStationInterface } from '@type/weather/WeatherStationInterface';
-import { BehaviorSubject, Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
+import type { SystemStateInterface } from '@type/waterSystem';
+import { BehaviorSubject, Observable, Subject } from 'rxjs';
+import { catchError, distinctUntilChanged, map, takeUntil } from 'rxjs/operators';
 
 export function createServicesUtil() {
   return {
@@ -36,4 +37,32 @@ export function createTotalInflowObservableUtil(aggregatedInflow$: Observable<{ 
 export function calculateTotalWaterVolumeUtil(dam: DamInterface | null, river: RiverStateInterface | null): number {
   if (!dam || !river) return 0;
   return dam.currentWaterLevel * dam.maxCapacity + river.waterVolume;
+}
+
+export function updateSystemState(
+  systemState$: BehaviorSubject<SystemStateInterface>,
+  key: keyof SystemStateInterface,
+  value: any
+) {
+  const currentState = systemState$.getValue();
+  if (currentState[key] !== value) {
+    systemState$.next({ ...currentState, [key]: value });
+  }
+}
+
+export function subscribeToState<T>(
+  state$: Observable<T | null>,
+  key: keyof SystemStateInterface,
+  systemState$: BehaviorSubject<SystemStateInterface>,
+  destroy$: Subject<void>,
+  errorHandler: (context: string, error: any) => void
+) {
+  return state$.pipe(
+    takeUntil(destroy$),
+    distinctUntilChanged(),
+    catchError(error => {
+      errorHandler(`useWaterSystem.${key}State$`, error);
+      return new Observable<T | null>();
+    })
+  ).subscribe(state => updateSystemState(systemState$, key, state));
 }
