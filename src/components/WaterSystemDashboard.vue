@@ -2,15 +2,15 @@
   <div class="water-system-dashboard">
     <h1 class="text-3xl font-bold mb-6">Tableau de bord du système d'eau</h1>
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      <DamComponent v-if="damState" :damState="damState" />
+      <DamComponent v-if="systemState.dam" :damState="systemState.dam" />
       <GlacierComponent 
-        v-if="glacierState" 
-        :glacierState="glacierState" 
+        v-if="systemState.glacier" 
+        :glacierState="systemState.glacier" 
         :currentTemperature="averageTemperature"
       />
       <RiverComponent 
-        v-if="riverState" 
-        :riverState="riverState" 
+        v-if="systemState.river" 
+        :riverState="systemState.river" 
         :currentPrecipitation="totalPrecipitation"
       />
       <MainWeatherStationComponent
@@ -27,51 +27,31 @@ import GlacierComponent from '@components/glacier/GlacierComponent.vue';
 import RiverComponent from '@components/river/RiverComponent.vue';
 import MainWeatherStationComponent from '@components/weather/MainWeatherStationComponent.vue';
 import { createWaterSystem } from '@factories/waterSystemFactory';
-import { createDamService } from '@services/damService';
-import { createGlacierService } from '@services/glacierService';
-import { createRiverService } from '@services/riverService';
-import { createWeatherService } from '@services/weatherService';
 import { errorHandlingService } from '@services/errorHandlingService';
-import { loggingService } from '@services/loggingService';
-import { createInflowAggregator } from '@services/inflowAggregator';
-import type { DamInterface } from '@type/dam/DamInterface';
-import type { GlacierStateInterface } from '@type/glacier/GlacierStateInterface';
-import type { RiverStateInterface } from '@type/river/RiverStateInterface';
+import type { SystemStateInterface } from '@type/waterSystem';
 import type { Latitude, Longitude, MainWeatherStationInterface } from '@type/weather/WeatherStationInterface';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 
-const waterSystem = createWaterSystem({
-  createDamService,
-  createGlacierService,
-  createRiverService,
-  createWeatherService,
-  errorHandlingService,
-  loggingService,
-  createInflowAggregator
-});
+const waterSystem = createWaterSystem();
 
-const damState = ref<DamInterface | null>(null);
-const glacierState = ref<GlacierStateInterface | null>(null);
-const riverState = ref<RiverStateInterface | null>(null);
-const mainWeatherState = ref<MainWeatherStationInterface | null>(null);
+const systemState = ref<SystemStateInterface>({
+  dam: null,
+  glacier: null,
+  river: null,
+  mainWeather: null
+});
 
 // Computed properties for MainWeatherStationComponent
-const averageTemperature = computed(() => mainWeatherState.value?.averageTemperature || 0);
-const totalPrecipitation = computed(() => mainWeatherState.value?.totalPrecipitation || 0);
+const averageTemperature = computed(() => systemState.value.mainWeather?.averageTemperature || 0);
+const totalPrecipitation = computed(() => systemState.value.mainWeather?.totalPrecipitation || 0);
 
 const computedMainWeatherState = computed((): MainWeatherStationInterface | null => {
-  if (!mainWeatherState.value) return null;
+  if (!systemState.value.mainWeather) return null;
   return {
-    ...mainWeatherState.value,
-    averageTemperature,
-    totalPrecipitation
+    ...systemState.value.mainWeather,
+    averageTemperature: averageTemperature.value,
+    totalPrecipitation: totalPrecipitation.value
   };
-});
-
-// Utiliser computed pour dériver des valeurs à partir de l'état
-const totalWaterVolume = computed(() => {
-  if (!damState.value || !riverState.value) return 0;
-  return damState.value.currentWaterLevel * damState.value.maxCapacity + riverState.value.waterVolume;
 });
 
 onMounted(() => {
@@ -122,10 +102,7 @@ onMounted(() => {
   // Subscribe to system state updates
   const subscription = waterSystem.systemState$.subscribe({
     next: (state) => {
-      damState.value = state.dam;
-      glacierState.value = state.glacier;
-      riverState.value = state.river;
-      mainWeatherState.value = state.mainWeather;
+      systemState.value = state;
     },
     error: (err) => {
       console.error('Error in systemState$ subscription', err);
@@ -143,6 +120,8 @@ onMounted(() => {
 
   // Cleanup function
   onUnmounted(() => {
+    subscription.unsubscribe();
+    errorSubscription.unsubscribe();
     waterSystem.cleanup();
   });
 });

@@ -1,4 +1,5 @@
 import { errorHandlingService, type ErrorDataInterface } from "@services/errorHandlingService";
+import type { WaterSystemDependenciesInterface } from '@type/waterSystem';
 import { throwError } from 'rxjs';
 
 /**
@@ -93,4 +94,21 @@ export function handleObservableError(err: unknown, code: string, context: strin
     context
   });
   return throwError(() => err);
+}
+
+export function handleWaterSystemError(
+  context: string,
+  error: any,
+  errorHandlingService: WaterSystemDependenciesInterface['errorHandlingService'],
+  loggingService: WaterSystemDependenciesInterface['loggingService']
+) {
+  const errorMessage = `Error in ${context}: ${error.message}`;
+  loggingService.error(errorMessage, context, { error });
+  errorHandlingService.emitError({
+    message: errorMessage,
+    code: `${context.toUpperCase()}_ERROR`,
+    timestamp: Date.now(),
+    context: context,
+    data: { error }
+  });
 }
