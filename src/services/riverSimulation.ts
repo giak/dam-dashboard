@@ -1,8 +1,8 @@
 import type { RiverStateInterface } from '@type/river/RiverInterface';
-import { BehaviorSubject, Observable, interval } from 'rxjs';
-import { map, withLatestFrom } from 'rxjs/operators';
-import { loggingService } from "./loggingService";
 import { updateRiverState } from '@utils/river/riverUtils';
+import { asyncScheduler, BehaviorSubject, interval, Observable } from 'rxjs';
+import { distinctUntilChanged, map, observeOn, share, tap, withLatestFrom } from 'rxjs/operators';
+import { loggingService } from "./loggingService";
 
 export interface RiverSimulationInterface {
   riverState$: Observable<RiverStateInterface>;
@@ -23,56 +23,94 @@ export function createRiverSimulation(
   const riverState = new BehaviorSubject<RiverStateInterface>(initialState);
   const outflowRate = new BehaviorSubject<number>(initialState.flowRate);
 
+  // Optimisation : Partage du flux d'état avec scheduler
+  const sharedRiverState$ = riverState.pipe(
+    observeOn(asyncScheduler),
+    distinctUntilChanged((prev, curr) => 
+      prev.flowRate === curr.flowRate && 
+      prev.waterVolume === curr.waterVolume
+    ),
+    share()
+  );
+
+  // Optimisation : Partage du flux de débit avec scheduler
+  const sharedOutflowRate$ = outflowRate.pipe(
+    observeOn(asyncScheduler),
+    distinctUntilChanged(),
+    share()
+  );
+
   const updateRiverStateInternal = (precipitationMm: number) => {
-    const currentState = riverState.getValue();
-    loggingService.info("Current river state:", "RiverSimulation", { state: currentState });
+    // Déplacer les calculs et validations vers asyncScheduler
+    asyncScheduler.schedule(() => {
+      const currentState = riverState.getValue();
+      
+      // Validation existante
+      if (typeof currentState.flowRate !== 'number' || isNaN(currentState.flowRate)) {
+        asyncScheduler.schedule(() => {
+          loggingService.error('Invalid flowRate:', "RiverSimulation", { error: 'Invalid flowRate' });
+        });
+        return;
+      }
 
-    // Vérification des valeurs
-    if (typeof currentState.flowRate !== 'number' || isNaN(currentState.flowRate)) {
-      loggingService.error('Invalid flowRate:', "RiverSimulation", { error: 'Invalid flowRate' });
-      return;
-    }
+      const newState = updateRiverState(
+        currentState,
+        precipitationMm,
+        SIMULATION_INTERVAL / 1000,
+        BASE_FLOW_RATE,
+        PRECIPITATION_IMPACT_FACTOR
+      );
 
-    const newState = updateRiverState(
-      currentState,
-      precipitationMm,
-      SIMULATION_INTERVAL / 1000,
-      BASE_FLOW_RATE,
-      PRECIPITATION_IMPACT_FACTOR
-    );
+      if (isNaN(newState.flowRate)) {
+        asyncScheduler.schedule(() => {
+          loggingService.error('Calculated flow rate is NaN', "RiverSimulation");
+        });
+        return;
+      }
 
-    if (isNaN(newState.flowRate)) {
-      loggingService.error('Calculated flow rate is NaN. Using current rate.', "RiverSimulation", { error: 'Calculated flow rate is NaN' });
-      return;
-    }
+      // Logging asynchrone
+      asyncScheduler.schedule(() => {
+        loggingService.info('New river state:', "RiverSimulation", {
+          flowRate: newState.flowRate,
+          waterVolume: newState.waterVolume
+        });
+      });
 
-    loggingService.info('New river state:', "RiverSimulation", {
-      flowRate: newState.flowRate,
-      waterVolume: newState.waterVolume
+      outflowRate.next(newState.flowRate);
+      riverState.next(newState);
     });
-
-    outflowRate.next(newState.flowRate);
-    riverState.next(newState);
   };
 
   const startSimulation = () => {
     loggingService.info("River simulation started", "RiverSimulation");
-    const subscription = interval(SIMULATION_INTERVAL).pipe(
+    
+    // Création du flux de simulation avec scheduler
+    const simulation$ = interval(SIMULATION_INTERVAL, asyncScheduler).pipe(
+      observeOn(asyncScheduler),
       withLatestFrom(precipitation$),
-      map(([, precipitation]) => precipitation)
-    ).subscribe(updateRiverStateInternal);
+      map(([, precipitation]) => precipitation),
+      tap(precipitation => {
+        asyncScheduler.schedule(() => {
+          loggingService.info("Processing precipitation", "RiverSimulation", { precipitation });
+        });
+      })
+    );
+
+    const subscription = simulation$.subscribe(updateRiverStateInternal);
     return () => subscription.unsubscribe();
   };
 
   const cleanup = () => {
-    loggingService.info("Cleaning up river simulation", "RiverSimulation");
-    riverState.complete();
-    outflowRate.complete();
+    asyncScheduler.schedule(() => {
+      loggingService.info("Cleaning up river simulation", "RiverSimulation");
+      riverState.complete();
+      outflowRate.complete();
+    });
   };
 
   return {
-    riverState$: riverState.asObservable(),
-    outflowRate$: outflowRate.asObservable(),
+    riverState$: sharedRiverState$,
+    outflowRate$: sharedOutflowRate$,
     startSimulation,
     cleanup,
     updateState: updateRiverStateInternal

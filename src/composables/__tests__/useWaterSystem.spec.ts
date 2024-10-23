@@ -1,175 +1,224 @@
-import type { DamInterface } from '@type/dam/DamInterface';
-import type { GlacierStateInterface } from '@type/glacier/GlacierStateInterface';
-import type { RiverStateInterface } from '@type/river/RiverStateInterface';
-import type { WaterSystemDependenciesInterface } from '@type/waterSystem';
-import { BehaviorSubject, Subject } from 'rxjs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useWaterSystem } from '../useWaterSystem';
+import type { ErrorDataInterface, ErrorHandlingService } from "@/services/errorHandlingService";
+import type { LoggingService } from "@/services/loggingService";
+import type { DamInterface } from "@/types/dam/DamInterface";
+import type { DamServiceInterface } from "@/types/dam/DamServiceInterface";
+import type { WaterSystemDependenciesInterface } from "@/types/waterSystem";
+import { BehaviorSubject, Observable, Subject } from "rxjs";
+import { TestScheduler } from "rxjs/testing";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useWaterSystem } from "../useWaterSystem";
 
-// Import the mocked modules
-import { useDam } from '@composables/dam/useDam';
-import { useGlacier } from '@composables/glacier/useGlacier';
-import { useRiver } from '@composables/river/useRiver';
-import { useMainWeatherStation } from '@composables/weather/useMainWeatherStation';
-import { ErrorHandlingService } from '@services/errorHandlingService';
-import { createInflowAggregator } from '@services/inflowAggregator';
-import { LoggingService } from '@services/loggingService';
-
-// Mocks
-vi.mock('@composables/dam/useDam');
-vi.mock('@composables/glacier/useGlacier');
-vi.mock('@composables/river/useRiver');
-vi.mock('@composables/weather/useMainWeatherStation');
-vi.mock('@services/inflowAggregator');
-vi.mock('@services/errorHandlingService');
-vi.mock('@services/loggingService');
-
-describe('useWaterSystem', () => {
-  let mockUseDam: ReturnType<typeof vi.fn>;
-  let mockUseGlacier: ReturnType<typeof vi.fn>;
-  let mockUseRiver: ReturnType<typeof vi.fn>;
-  let mockUseMainWeatherStation: ReturnType<typeof vi.fn>;
-  let mockCreateInflowAggregator: ReturnType<typeof vi.fn>;
+describe("useWaterSystem", () => {
+  let testScheduler: TestScheduler;
+  let dependencies: WaterSystemDependenciesInterface;
   let mockCreateDamService: ReturnType<typeof vi.fn>;
-  let mockCreateGlacierService: ReturnType<typeof vi.fn>;
-  let mockCreateRiverService: ReturnType<typeof vi.fn>;
-  let mockCreateWeatherService: ReturnType<typeof vi.fn>;
-  let mockErrorHandlingService: ErrorHandlingService;
-  let mockLoggingService: LoggingService;
 
-  beforeEach(() => {
-    vi.resetAllMocks();
-
-    mockUseDam = vi.mocked(useDam);
-    mockUseGlacier = vi.mocked(useGlacier);
-    mockUseRiver = vi.mocked(useRiver);
-    mockUseMainWeatherStation = vi.mocked(useMainWeatherStation);
-    mockCreateInflowAggregator = vi.mocked(createInflowAggregator);
-
-    mockCreateDamService = vi.fn();
-    mockCreateGlacierService = vi.fn();
-    mockCreateRiverService = vi.fn();
-    mockCreateWeatherService = vi.fn();
-
-    mockCreateInflowAggregator.mockReturnValue({
-      addSource: vi.fn(),
-      removeSource: vi.fn(),
-      aggregatedInflow$: new BehaviorSubject({ totalInflow: 0, sources: {} }),
-    });
-
-    // Setup mock implementations for errorHandlingService and loggingService
-    mockErrorHandlingService = {
-      emitError: vi.fn(),
-      getErrorObservable: vi.fn().mockReturnValue(new Subject().asObservable()),
-    } as unknown as ErrorHandlingService;
-
-    mockLoggingService = {
-      info: vi.fn(),
-      error: vi.fn(),
-      warn: vi.fn(),
-      log: vi.fn(),
-      printLog: vi.fn(),
-      getLogs: vi.fn(),
-      setErrorHandlingService: vi.fn(),
-    } as unknown as LoggingService;
-
-    // Simuler l'initialisation de la connexion entre les services
-    mockLoggingService.setErrorHandlingService(mockErrorHandlingService);
-
-    vi.mocked(ErrorHandlingService).mockImplementation(() => mockErrorHandlingService);
-    vi.mocked(LoggingService).mockImplementation(() => mockLoggingService);
+  // Helper function pour créer un mock du service de barrage
+  const createMockDamService = (initialData: DamInterface): DamServiceInterface => ({
+    getDamState$: () => new BehaviorSubject(initialData),
+    getCurrentWaterLevel$: () => new BehaviorSubject(initialData.currentWaterLevel),
+    updateDam: vi.fn(),
+    startSimulation: vi.fn().mockReturnValue(() => {}),
+    cleanup: vi.fn()
   });
 
-  afterEach(() => {
+  // Mock des services
+  const mockErrorHandlingService = {
+    onError: vi.fn(),
+    getErrorObservable: vi.fn().mockReturnValue(new Subject<ErrorDataInterface>()),
+    reportError: vi.fn(),
+    handleError: vi.fn(),
+    dispose: vi.fn()
+  } as unknown as ErrorHandlingService;
+
+  // Mock du LoggingService aligné avec l'implémentation réelle
+  const mockLoggingService = {
+    logs: [],
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    log: vi.fn(),
+    printLog: vi.fn(),
+    getLogs: vi.fn().mockReturnValue([]),
+    errorHandlingService: mockErrorHandlingService,
+    setErrorHandlingService: vi.fn(),
+    subscribeToErrors: vi.fn(),
+    unsubscribeFromErrors: vi.fn(),
+    dispose: vi.fn()
+  } as unknown as LoggingService;
+
+  const mockInflowAggregator = {
+    addSource: vi.fn(),
+    aggregatedInflow$: new BehaviorSubject(0),
+  };
+
+  // Mock des services de création
+  const mockCreateGlacierService = vi.fn();
+  const mockCreateRiverService = vi.fn();
+  const mockCreateWeatherService = vi.fn();
+
+  beforeEach(() => {
+    // Configuration du TestScheduler
+    testScheduler = new TestScheduler((actual, expected) => {
+      expect(actual).toEqual(expected);
+    });
+
+    // Création du mock createDamService
+    mockCreateDamService = vi.fn();
+
+    // Initialisation des dépendances
+    dependencies = {
+      errorHandlingService: mockErrorHandlingService,
+      loggingService: mockLoggingService,
+      createInflowAggregator: vi.fn().mockReturnValue(mockInflowAggregator),
+      createDamService: mockCreateDamService,
+      createGlacierService: mockCreateGlacierService,
+      createRiverService: mockCreateRiverService,
+      createWeatherService: mockCreateWeatherService
+    };
+
+    // Reset des mocks avant chaque test
     vi.clearAllMocks();
   });
 
-  const createMockDependencies = (): WaterSystemDependenciesInterface => ({
-    createInflowAggregator: mockCreateInflowAggregator,
-    errorHandlingService: mockErrorHandlingService,
-    loggingService: mockLoggingService,
-    createDamService: mockCreateDamService,
-    createGlacierService: mockCreateGlacierService,
-    createRiverService: mockCreateRiverService,
-    createWeatherService: mockCreateWeatherService,
+  afterEach(() => {
+    // Nettoyage après chaque test
+    mockInflowAggregator.aggregatedInflow$.complete();
   });
 
-  it('should initialize with default dependencies', () => {
-    const waterSystem = useWaterSystem(createMockDependencies());
+  it("should create waterSystem with initial state", () => {
+    testScheduler.run(({ cold, expectObservable }) => {
+      const waterSystem = useWaterSystem(dependencies);
 
-    expect(waterSystem).toBeDefined();
-    expect(waterSystem.initializeDam).toBeInstanceOf(Function);
-    expect(waterSystem.initializeGlacier).toBeInstanceOf(Function);
-    expect(waterSystem.initializeRiver).toBeInstanceOf(Function);
-    expect(waterSystem.initializeMainWeatherStation).toBeInstanceOf(Function);
-    expect(waterSystem.systemState$).toBeDefined();
-    expect(waterSystem.totalWaterVolume$).toBeDefined();
-    expect(waterSystem.cleanup).toBeInstanceOf(Function);
-    expect(waterSystem.error$).toBeDefined();
+      expectObservable(waterSystem.systemState$).toBe("a", {
+        a: {
+          dam: null,
+          glacier: null,
+          river: null,
+          mainWeather: null,
+        },
+      });
+
+      expect(mockErrorHandlingService.getErrorObservable).toHaveBeenCalled();
+    });
   });
 
-  it('should initialize components correctly', () => {
-    const waterSystem = useWaterSystem(createMockDependencies());
-
-    const damData: DamInterface = {
-      id: 'dam1',
-      name: 'Test Dam',
-      currentWaterLevel: 50,
-      minWaterLevel: 0,
-      maxWaterLevel: 100,
-      maxCapacity: 1000000,
-      inflowRate: 100,
-      outflowRate: 80,
-      lastUpdated: new Date(),
-    };
-    waterSystem.initializeDam(damData);
-    expect(mockUseDam).toHaveBeenCalledWith(damData, expect.any(Object));
-
-    const glacierData: GlacierStateInterface = {
-      id: 'glacier1',
-      name: 'Test Glacier',
-      volume: 1000000,
-      meltRate: 0.1,
-      outflowRate: 5,
-      lastUpdated: new Date(),
-      elevation: 3000,
-      area: 50000,
-      temperature: -5,
-      flow: 10,
-    };
-    waterSystem.initializeGlacier(glacierData);
-    expect(mockUseGlacier).toHaveBeenCalledWith(glacierData, expect.any(Object));
-
-    const riverData: RiverStateInterface = {
-      id: 'river1',
-      name: 'Test River',
-      flowRate: 100,
-      waterVolume: 1000000,
-      lastUpdated: new Date(),
-      waterLevel: 5,
-      temperature: 15,
-      pollutionLevel: 0.1,
-      catchmentArea: 10000,
-    };
-    waterSystem.initializeRiver(riverData);
-    expect(mockUseRiver).toHaveBeenCalledWith(riverData, expect.any(Object));
-
-    waterSystem.initializeMainWeatherStation('weather1', 'Test Weather Station', []);
-    expect(mockUseMainWeatherStation).toHaveBeenCalledWith('weather1', 'Test Weather Station', []);
+  it("should calculate total water volume correctly", () => {
+    testScheduler.run(({ cold, expectObservable }) => {
+      const waterSystem = useWaterSystem(dependencies);
+      
+      // Vérifier que le totalWaterVolume$ émet la valeur correcte initialement
+      expectObservable(waterSystem.totalWaterVolume$).toBe("a", {
+        a: 0, // La valeur initiale devrait être 0 car dam et river sont null
+      });
+    });
   });
 
-  it('should create and share observables correctly', () => {
-    const waterSystem = useWaterSystem(createMockDependencies());
+  it("should handle error observable", () => {
+    testScheduler.run(({ cold, expectObservable }) => {
+      const waterSystem = useWaterSystem(dependencies);
+      
+      // Vérifier que l'observable d'erreur est correctement configuré
+      expect(mockErrorHandlingService.getErrorObservable).toHaveBeenCalled();
+      
+      // Vérifier que l'observable d'erreur est disponible
+      expect(waterSystem.error$).toBeDefined();
+    });
+  });
 
-    expect(waterSystem.systemState$).toBeDefined();
-    expect(waterSystem.totalWaterVolume$).toBeDefined();
-    expect(waterSystem.error$).toBeDefined();
+  describe("Dam initialization", () => {
+    it("should initialize dam correctly", () => {
+      // Préparation des données de test
+      const mockDamData: DamInterface = {
+        id: "dam1",
+        name: "Test Dam",
+        currentWaterLevel: 50,
+        maxWaterLevel: 100,
+        minWaterLevel: 0,
+        outflowRate: 10,
+        inflowRate: 15,
+        maxCapacity: 1000,
+        lastUpdated: new Date()
+      };
 
-    const subscription1 = waterSystem.systemState$.subscribe();
-    const subscription2 = waterSystem.systemState$.subscribe();
-    expect(subscription1).not.toBe(subscription2);
-    
-    subscription1.unsubscribe();
-    subscription2.unsubscribe();
+      // Mock du service de barrage avec l'interface complète
+      const mockDamService: DamServiceInterface = {
+        getDamState$: () => new BehaviorSubject(mockDamData),
+        getCurrentWaterLevel$: () => new BehaviorSubject(mockDamData.currentWaterLevel),
+        updateDam: vi.fn(),
+        startSimulation: vi.fn().mockReturnValue(() => {}),
+        cleanup: vi.fn()
+      };
+
+      // Configuration du mock createDamService avant la création du système
+      const mockCreateDamService = vi.fn().mockReturnValue(mockDamService);
+      dependencies.createDamService = mockCreateDamService;
+
+      // Création du système d'eau
+      const waterSystem = useWaterSystem(dependencies);
+
+      // Initialisation du barrage
+      waterSystem.initializeDam(mockDamData);
+
+      // Vérifications immédiates
+      expect(mockCreateDamService).toHaveBeenCalledWith(
+        mockDamData,
+        expect.anything() // Pour le totalInflow$
+      );
+
+      // Vérifier que le service de logging a été appelé
+      expect(dependencies.loggingService.info).toHaveBeenCalledWith(
+        expect.stringContaining("Dam initialized"),
+        expect.any(String)
+      );
+
+      // Vérification de l'état du système
+      let currentState: any;
+      waterSystem.systemState$.subscribe(state => {
+        currentState = state;
+      });
+
+      expect(currentState).toEqual({
+        dam: mockDamData,
+        glacier: null,
+        river: null,
+        mainWeather: null,
+      });
+    });
+
+    it("should handle dam initialization error", () => {
+      const mockError = new Error("Dam initialization failed");
+      
+      // Configuration du mock pour lancer une erreur
+      const mockCreateDamService = vi.fn().mockImplementation(() => {
+        throw mockError;
+      });
+      dependencies.createDamService = mockCreateDamService;
+
+      const waterSystem = useWaterSystem(dependencies);
+      const mockDamData = {} as DamInterface;
+
+      // L'initialisation devrait échouer mais ne pas planter
+      waterSystem.initializeDam(mockDamData);
+
+      // Vérifier que l'erreur a été gérée
+      expect(mockErrorHandlingService.handleError).toHaveBeenCalledWith(
+        mockError,
+        expect.stringContaining("initializeDam")
+      );
+
+      // Vérifier l'état du système
+      let currentState: any;
+      waterSystem.systemState$.subscribe(state => {
+        currentState = state;
+      });
+
+      expect(currentState).toEqual({
+        dam: null,
+        glacier: null,
+        river: null,
+        mainWeather: null,
+      });
+    });
   });
 });

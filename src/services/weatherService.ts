@@ -1,6 +1,6 @@
 import type { MainWeatherStationInterface, WeatherDataInterface, WeatherStationConfig, WeatherStationInterface } from '@type/weather/WeatherStationInterface';
-import { BehaviorSubject, Observable, combineLatest, interval } from 'rxjs';
-import { map, shareReplay, switchMap } from 'rxjs/operators';
+import { BehaviorSubject, Observable, asyncScheduler, combineLatest, distinctUntilChanged, interval, shareReplay } from 'rxjs';
+import { map, observeOn, switchMap } from 'rxjs/operators';
 import { loggingService } from './loggingService';
 import { createWeatherSimulation } from './weatherSimulation';
 
@@ -40,28 +40,45 @@ export function createWeatherService(
     precipitation$: new BehaviorSubject(0)
   });
 
+  // Déplacer les calculs intensifs vers asyncScheduler
   const updateMainWeatherState = (weatherData: WeatherDataInterface[]): void => {
-    const averageTemperature = weatherData.reduce((sum, data) => sum + data.temperature, 0) / weatherData.length;
-    const totalPrecipitation = weatherData.reduce((sum, data) => sum + data.precipitation, 0);
+    asyncScheduler.schedule(() => {
+      const averageTemperature = weatherData.reduce((sum, data) => sum + data.temperature, 0) / weatherData.length;
+      const totalPrecipitation = weatherData.reduce((sum, data) => sum + data.precipitation, 0);
 
-    const currentState = mainWeatherState$.getValue();
-    const newState: MainWeatherStationInterface = {
-      ...currentState,
-      averageTemperature,
-      totalPrecipitation,
-      lastUpdate: new Date()
-    };
+      const currentState = mainWeatherState$.getValue();
+      const newState: MainWeatherStationInterface = {
+        ...currentState,
+        averageTemperature,
+        totalPrecipitation,
+        lastUpdate: new Date()
+      };
 
-    mainWeatherState$.next(newState);
-    (newState.temperature$ as BehaviorSubject<number>).next(averageTemperature);
-    (newState.precipitation$ as BehaviorSubject<number>).next(totalPrecipitation);
+      mainWeatherState$.next(newState);
+      (newState.temperature$ as BehaviorSubject<number>).next(averageTemperature);
+      (newState.precipitation$ as BehaviorSubject<number>).next(totalPrecipitation);
 
-    loggingService.info('Main weather state updated', 'WeatherService', { newState });
+      // Logging asynchrone
+      asyncScheduler.schedule(() => {
+        loggingService.info('Main weather state updated', 'WeatherService', { newState });
+      });
+    });
   };
 
+  // Optimisation de la combinaison des données avec scheduler
+  const combinedWeatherData$ = combineLatest(
+    subStations.map(station => station.weatherData$)
+  ).pipe(
+    observeOn(asyncScheduler), // Déplace le traitement vers asyncScheduler
+    distinctUntilChanged((prev, curr) => 
+      JSON.stringify(prev) === JSON.stringify(curr)
+    ),
+    shareReplay(1)
+  );
+
   const startSimulation = (): (() => void) => {
-    const subscription = interval(SIMULATION_INTERVAL).pipe(
-      switchMap(() => combineLatest(subStations.map(station => station.weatherData$)))
+    const subscription = interval(SIMULATION_INTERVAL, asyncScheduler).pipe(
+      switchMap(() => combinedWeatherData$)
     ).subscribe(updateMainWeatherState);
 
     return () => subscription.unsubscribe();
@@ -72,14 +89,26 @@ export function createWeatherService(
     mainWeatherState$.complete();
   };
 
+  // Optimisation des observables exposés
   return {
-    getMainWeatherState$: () => mainWeatherState$.asObservable(),
+    getMainWeatherState$: () => mainWeatherState$.pipe(
+      observeOn(asyncScheduler),
+      shareReplay(1)
+    ),
     getTemperature$: () => mainWeatherState$.pipe(
-      map(state => typeof state.averageTemperature === 'number' ? state.averageTemperature : state.averageTemperature.value),
+      observeOn(asyncScheduler),
+      map(state => typeof state.averageTemperature === 'number' ? 
+        state.averageTemperature : 
+        state.averageTemperature.value
+      ),
       shareReplay(1)
     ),
     getPrecipitation$: () => mainWeatherState$.pipe(
-      map(state => typeof state.totalPrecipitation === 'number' ? state.totalPrecipitation : state.totalPrecipitation.value),
+      observeOn(asyncScheduler),
+      map(state => typeof state.totalPrecipitation === 'number' ? 
+        state.totalPrecipitation : 
+        state.totalPrecipitation.value
+      ),
       shareReplay(1)
     ),
     startSimulation,

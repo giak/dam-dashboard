@@ -5,8 +5,9 @@ import type {
   WeatherStationConfig,
   WeatherStationInterface
 } from '@type/weather/WeatherStationInterface';
-import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
-import { computed, onUnmounted, ref } from 'vue';
+import { BehaviorSubject, Observable, asyncScheduler, combineLatest, distinctUntilChanged, shareReplay } from 'rxjs';
+import { debounceTime, observeOn, tap } from 'rxjs/operators';
+import { computed, onUnmounted, ref, type ComputedRef } from 'vue';
 import { useWeatherStation } from './useWeatherStation';
 
 const TEMPERATURE_PRECISION = 2;
@@ -38,7 +39,25 @@ export function calculateTotalPrecipitation(dataArray: WeatherDataInterface[]): 
  * @returns Observable de données météorologiques combinées
  */
 export function createCombinedWeatherData$(subStations: WeatherStationInterface[]): Observable<WeatherDataInterface[]> {
-  return combineLatest(subStations.map(station => station.weatherData$));
+  return combineLatest(subStations.map(station => station.weatherData$)).pipe(
+    observeOn(asyncScheduler),
+    debounceTime(100), // Évite les mises à jour trop fréquentes
+    distinctUntilChanged((prev, curr) => 
+      prev.length === curr.length &&
+      prev.every((data, index) => 
+        data.temperature === curr[index].temperature &&
+        data.precipitation === curr[index].precipitation
+      )
+    ),
+    tap(data => {
+      asyncScheduler.schedule(() => {
+        loggingService.info('Combined weather data updated', 'useMainWeatherStation', { 
+          stationCount: data.length 
+        });
+      });
+    }),
+    shareReplay(1)
+  );
 }
 
 /**
@@ -62,31 +81,60 @@ export function useMainWeatherStation(
   const temperature$ = new BehaviorSubject<number>(0);
   const precipitation$ = new BehaviorSubject<number>(0);
 
-  const updateWeatherData = (weatherData: WeatherDataInterface[]) => {
-    averageTemperature.value = calculateAverageTemperature(weatherData);
-    totalPrecipitation.value = calculateTotalPrecipitation(weatherData);
-    lastUpdate.value = new Date();
+  // Optimisation des flux avec scheduler
+  const sharedTemperature$ = temperature$.pipe(
+    observeOn(asyncScheduler),
+    distinctUntilChanged(),
+    shareReplay(1)
+  );
 
-    temperature$.next(averageTemperature.value);
-    precipitation$.next(totalPrecipitation.value);
+  const sharedPrecipitation$ = precipitation$.pipe(
+    observeOn(asyncScheduler),
+    distinctUntilChanged(),
+    shareReplay(1)
+  );
+
+  const updateWeatherData = (weatherData: WeatherDataInterface[]) => {
+    // Déplacer les calculs vers asyncScheduler
+    asyncScheduler.schedule(() => {
+      const newTemp = calculateAverageTemperature(weatherData);
+      const newPrecip = calculateTotalPrecipitation(weatherData);
+
+      // Mise à jour uniquement si les valeurs ont changé
+      if (newTemp !== averageTemperature.value) {
+        averageTemperature.value = newTemp;
+        temperature$.next(newTemp);
+      }
+
+      if (newPrecip !== totalPrecipitation.value) {
+        totalPrecipitation.value = newPrecip;
+        precipitation$.next(newPrecip);
+      }
+
+      lastUpdate.value = new Date();
+
+      // Logging asynchrone
+      asyncScheduler.schedule(() => {
+        loggingService.info('Weather data updated', 'useMainWeatherStation', { 
+          averageTemperature: averageTemperature.value, 
+          totalPrecipitation: totalPrecipitation.value 
+        });
+      });
+    });
   };
 
   const combinedWeatherData$ = createCombinedWeatherData$(subStations);
 
-  const subscription = combinedWeatherData$.subscribe(weatherData => {
-    updateWeatherData(weatherData);
-    loggingService.info('Weather data updated', 'useMainWeatherStation', { 
-      averageTemperature: averageTemperature.value, 
-      totalPrecipitation: totalPrecipitation.value 
-    });
-  });
+  const subscription = combinedWeatherData$.subscribe(updateWeatherData);
 
   onUnmounted(() => {
-    subscription.unsubscribe();
-    subStations.forEach(station => station.cleanup());
-    temperature$.complete();
-    precipitation$.complete();
-    loggingService.info('Main weather station cleaned up', 'useMainWeatherStation');
+    asyncScheduler.schedule(() => {
+      subscription.unsubscribe();
+      subStations.forEach(station => station.cleanup());
+      temperature$.complete();
+      precipitation$.complete();
+      loggingService.info('Main weather station cleaned up', 'useMainWeatherStation');
+    });
   });
 
   return {
@@ -95,8 +143,8 @@ export function useMainWeatherStation(
     subStations,
     averageTemperature: computed(() => averageTemperature.value),
     totalPrecipitation: computed(() => totalPrecipitation.value),
-    lastUpdate: computed(() => lastUpdate.value),
-    temperature$,
-    precipitation$
+    lastUpdate: lastUpdate.value,
+    temperature$: sharedTemperature$,
+    precipitation$: sharedPrecipitation$
   };
 }

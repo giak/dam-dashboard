@@ -1,7 +1,7 @@
 import type { RiverStateInterface, RiverUpdateInterface } from '@type/river/RiverInterface';
 import { updateRiverState } from '@utils/river/riverUtils';
-import { BehaviorSubject, Observable, interval } from 'rxjs';
-import { map, withLatestFrom } from 'rxjs/operators';
+import { BehaviorSubject, Observable, asyncScheduler, distinctUntilChanged, interval } from 'rxjs';
+import { map, observeOn, shareReplay, tap, withLatestFrom } from 'rxjs/operators';
 import { errorHandlingService } from './errorHandlingService';
 import { loggingService } from './loggingService';
 
@@ -18,51 +18,102 @@ export interface RiverServiceInterface {
   cleanup: () => void;
 }
 
-export function createRiverService(initialData: RiverStateInterface, precipitation$: Observable<number>): RiverServiceInterface {
+export function createRiverService(
+  initialData: RiverStateInterface, 
+  precipitation$: Observable<number>
+): RiverServiceInterface {
+  // Optimisation : Utilisation de shareReplay pour partager l'état avec scheduler
   const riverState$ = new BehaviorSubject<RiverStateInterface>(initialData);
+  
+  // Optimisation : Flux partagé avec distinctUntilChanged et scheduler
+  const sharedRiverState$ = riverState$.pipe(
+    observeOn(asyncScheduler),
+    distinctUntilChanged((prev, curr) => 
+      prev.flowRate === curr.flowRate && 
+      prev.waterVolume === curr.waterVolume
+    ),
+    shareReplay(1)
+  );
+
+  // Optimisation : Flux de débit partagé avec scheduler
+  const outflowRate$ = sharedRiverState$.pipe(
+    observeOn(asyncScheduler),
+    map(state => state.flowRate),
+    distinctUntilChanged(),
+    shareReplay(1)
+  );
 
   const updateRiver = (update: RiverUpdateInterface): void => {
-    try {
-      const currentState = riverState$.getValue();
-      const newState = { ...currentState, ...update, lastUpdated: new Date() };
-      riverState$.next(newState);
-      loggingService.info('River state updated', 'RiverService', { newState });
-    } catch (error) {
-      errorHandlingService.emitError({
-        message: 'Error updating river state',
-        timestamp: Date.now(),
-        context: 'RiverService.updateRiver',
-        data: { error, update }
-      });
-    }
+    // Déplacer la mise à jour vers asyncScheduler
+    asyncScheduler.schedule(() => {
+      try {
+        const currentState = riverState$.getValue();
+        const newState = { 
+          ...currentState, 
+          ...update, 
+          lastUpdated: new Date() 
+        };
+        riverState$.next(newState);
+        
+        // Logging asynchrone
+        asyncScheduler.schedule(() => {
+          loggingService.info('River state updated', 'RiverService', { newState });
+        });
+      } catch (error) {
+        // Gestion d'erreur asynchrone
+        asyncScheduler.schedule(() => {
+          errorHandlingService.emitError({
+            message: 'Error updating river state',
+            timestamp: Date.now(),
+            context: 'RiverService.updateRiver',
+            data: { error, update }
+          });
+        });
+      }
+    });
   };
 
   const startSimulation = (): (() => void) => {
-    const subscription = interval(SIMULATION_INTERVAL).pipe(
+    // Optimisation : Création d'un flux de simulation partagé avec scheduler
+    const simulation$ = interval(SIMULATION_INTERVAL, asyncScheduler).pipe(
+      observeOn(asyncScheduler),
       withLatestFrom(precipitation$),
-      map(([, precipitation]) => precipitation)
-    ).subscribe(precipitation => {
-      const currentState = riverState$.getValue();
-      const newState = updateRiverState(
-        currentState,
-        precipitation,
-        SIMULATION_INTERVAL / 1000, // Convertir en secondes
-        BASE_FLOW_RATE,
-        PRECIPITATION_IMPACT_FACTOR
-      );
-      riverState$.next(newState);
+      map(([, precipitation]) => precipitation),
+      tap(precipitation => {
+        asyncScheduler.schedule(() => {
+          loggingService.info('Processing precipitation', 'RiverService', { precipitation });
+        });
+      }),
+      shareReplay(1)
+    );
+
+    const subscription = simulation$.subscribe(precipitation => {
+      asyncScheduler.schedule(() => {
+        const currentState = riverState$.getValue();
+        const newState = updateRiverState(
+          currentState,
+          precipitation,
+          SIMULATION_INTERVAL / 1000,
+          BASE_FLOW_RATE,
+          PRECIPITATION_IMPACT_FACTOR
+        );
+        riverState$.next(newState);
+      });
     });
 
     return () => subscription.unsubscribe();
   };
 
   const cleanup = (): void => {
-    riverState$.complete();
+    asyncScheduler.schedule(() => {
+      riverState$.complete();
+      loggingService.info('River service cleaned up', 'RiverService');
+    });
   };
 
   return {
-    getRiverState$: () => riverState$.asObservable(),
-    getOutflowRate$: () => riverState$.pipe(map(state => state.flowRate)),
+    getRiverState$: () => sharedRiverState$,
+    getOutflowRate$: () => outflowRate$,
     updateRiver,
     startSimulation,
     cleanup
