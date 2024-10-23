@@ -1,4 +1,4 @@
-import { Observable, merge, map, scan, catchError, of, BehaviorSubject, switchMap, distinctUntilChanged, shareReplay, asyncScheduler } from 'rxjs';
+import { BehaviorSubject, Observable, asyncScheduler, catchError, distinctUntilChanged, map, merge, of, scan, shareReplay, switchMap } from 'rxjs';
 import { observeOn, tap } from 'rxjs/operators';
 import { loggingService } from './loggingService';
 

@@ -1,7 +1,29 @@
 import type { RiverStateInterface } from '@type/river/RiverInterface';
 import { updateRiverState } from '@utils/river/riverUtils';
-import { asyncScheduler, BehaviorSubject, interval, Observable } from 'rxjs';
-import { distinctUntilChanged, map, observeOn, share, tap, withLatestFrom } from 'rxjs/operators';
+import { 
+  asyncScheduler, 
+  queueScheduler,
+  BehaviorSubject, 
+  interval, 
+  Observable, 
+  Subject,
+  timer,
+  EMPTY
+} from 'rxjs';
+import { 
+  distinctUntilKeyChanged,
+  distinctUntilChanged,
+  map, 
+  observeOn, 
+  share, 
+  tap, 
+  withLatestFrom,
+  takeUntil,
+  finalize,
+  retry,
+  catchError,
+  debounceTime
+} from 'rxjs/operators';
 import { loggingService } from "./loggingService";
 
 export interface RiverSimulationInterface {
@@ -20,29 +42,40 @@ export function createRiverSimulation(
   initialState: RiverStateInterface,
   precipitation$: Observable<number>
 ): RiverSimulationInterface {
+  const destroy$ = new Subject<void>();
   const riverState = new BehaviorSubject<RiverStateInterface>(initialState);
   const outflowRate = new BehaviorSubject<number>(initialState.flowRate);
 
-  // Optimisation : Partage du flux d'état avec scheduler
+  // Optimisation : Flux d'état avec gestion améliorée
   const sharedRiverState$ = riverState.pipe(
     observeOn(asyncScheduler),
-    distinctUntilChanged((prev, curr) => 
-      prev.flowRate === curr.flowRate && 
-      prev.waterVolume === curr.waterVolume
-    ),
+    debounceTime(100), // Évite les mises à jour trop fréquentes
+    distinctUntilKeyChanged('flowRate'), // Optimisation : utilisation de distinctUntilKeyChanged
+    takeUntil(destroy$),
+    finalize(() => {
+      loggingService.info('River state stream finalized', 'RiverSimulation');
+    }),
+    catchError(error => {
+      loggingService.error('Error in river state stream', 'RiverSimulation', { error });
+      return EMPTY;
+    }),
     share()
   );
 
-  // Optimisation : Partage du flux de débit avec scheduler
+  // Optimisation : Flux de débit avec gestion améliorée
   const sharedOutflowRate$ = outflowRate.pipe(
     observeOn(asyncScheduler),
     distinctUntilChanged(),
+    takeUntil(destroy$),
+    finalize(() => {
+      loggingService.info('Outflow rate stream finalized', 'RiverSimulation');
+    }),
     share()
   );
 
   const updateRiverStateInternal = (precipitationMm: number) => {
-    // Déplacer les calculs et validations vers asyncScheduler
-    asyncScheduler.schedule(() => {
+    // Utilisation de queueScheduler pour les calculs intensifs
+    queueScheduler.schedule(() => {
       const currentState = riverState.getValue();
       
       // Validation existante
@@ -68,13 +101,13 @@ export function createRiverSimulation(
         return;
       }
 
-      // Logging asynchrone
+      // Logging asynchrone avec priorité basse
       asyncScheduler.schedule(() => {
         loggingService.info('New river state:', "RiverSimulation", {
           flowRate: newState.flowRate,
           waterVolume: newState.waterVolume
         });
-      });
+      }, 0, { priority: -1 });
 
       outflowRate.next(newState.flowRate);
       riverState.next(newState);
@@ -84,16 +117,31 @@ export function createRiverSimulation(
   const startSimulation = () => {
     loggingService.info("River simulation started", "RiverSimulation");
     
-    // Création du flux de simulation avec scheduler
+    // Création du flux de simulation avec gestion d'erreurs avancée
     const simulation$ = interval(SIMULATION_INTERVAL, asyncScheduler).pipe(
       observeOn(asyncScheduler),
       withLatestFrom(precipitation$),
       map(([, precipitation]) => precipitation),
+      retry({
+        count: 3,
+        delay: (error, retryCount) => {
+          loggingService.error('Simulation error, retrying...', 'RiverSimulation', { 
+            error, 
+            retryCount 
+          });
+          return timer(Math.min(1000 * Math.pow(2, retryCount), 10000));
+        }
+      }),
       tap(precipitation => {
         asyncScheduler.schedule(() => {
           loggingService.info("Processing precipitation", "RiverSimulation", { precipitation });
-        });
-      })
+        }, 0, { priority: -1 });
+      }),
+      takeUntil(destroy$),
+      finalize(() => {
+        loggingService.info('Simulation stream finalized', 'RiverSimulation');
+      }),
+      share()
     );
 
     const subscription = simulation$.subscribe(updateRiverStateInternal);
@@ -101,11 +149,11 @@ export function createRiverSimulation(
   };
 
   const cleanup = () => {
-    asyncScheduler.schedule(() => {
-      loggingService.info("Cleaning up river simulation", "RiverSimulation");
-      riverState.complete();
-      outflowRate.complete();
-    });
+    destroy$.next();
+    destroy$.complete();
+    riverState.complete();
+    outflowRate.complete();
+    loggingService.info("Cleaning up river simulation", "RiverSimulation");
   };
 
   return {

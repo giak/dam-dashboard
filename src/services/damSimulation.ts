@@ -1,6 +1,16 @@
 import type { DamInterface } from '@type/dam/DamInterface';
-import { BehaviorSubject, Observable, asyncScheduler, interval } from 'rxjs';
-import { distinctUntilChanged, observeOn, share, shareReplay, tap } from 'rxjs/operators';
+import { asyncScheduler, BehaviorSubject, EMPTY, interval, Observable, queueScheduler, Subject, timer } from 'rxjs';
+import {
+  catchError,
+  distinctUntilChanged,
+  finalize,
+  observeOn,
+  retry,
+  share,
+  shareReplay,
+  takeUntil,
+  tap
+} from 'rxjs/operators';
 import { loggingService } from "./loggingService";
 
 export interface DamSimulationInterface {
@@ -11,10 +21,11 @@ export interface DamSimulationInterface {
 }
 
 export function createDamSimulation(initialState: DamInterface): DamSimulationInterface {
+  const destroy$ = new Subject<void>();
   const damState = new BehaviorSubject<DamInterface>(initialState);
   const currentWaterLevel = new BehaviorSubject<number>(initialState.currentWaterLevel);
 
-  // Optimisation : Flux d'état partagé avec scheduler
+  // Optimisation : Flux d'état partagé avec scheduler et gestion d'erreurs
   const sharedDamState$ = damState.pipe(
     observeOn(asyncScheduler),
     distinctUntilChanged((prev, curr) => 
@@ -22,95 +33,86 @@ export function createDamSimulation(initialState: DamInterface): DamSimulationIn
       prev.inflowRate === curr.inflowRate &&
       prev.outflowRate === curr.outflowRate
     ),
+    catchError(error => {
+      loggingService.error('Error in dam state stream', 'DamSimulation', { error });
+      return new Observable<DamInterface>();
+    }),
+    takeUntil(destroy$),
+    finalize(() => {
+      loggingService.info('Dam state stream finalized', 'DamSimulation');
+    }),
     shareReplay(1)
   );
 
-  // Optimisation : Flux de niveau d'eau partagé avec scheduler
+  // Optimisation : Flux de niveau d'eau avec scheduler et gestion d'erreurs
   const sharedWaterLevel$ = currentWaterLevel.pipe(
     observeOn(asyncScheduler),
     distinctUntilChanged(),
+    catchError(error => {
+      loggingService.error('Error in water level stream', 'DamSimulation', { error });
+      return new Observable<number>();
+    }),
+    takeUntil(destroy$),
+    finalize(() => {
+      loggingService.info('Water level stream finalized', 'DamSimulation');
+    }),
     shareReplay(1)
   );
 
   const updateWaterLevel = () => {
-    // Déplacer les calculs et validations vers asyncScheduler
-    asyncScheduler.schedule(() => {
-      const currentState = damState.getValue();
-      
-      // Logging asynchrone de l'état actuel
-      asyncScheduler.schedule(() => {
-        loggingService.info("Current state:", "DamSimulation", { state: currentState });
-      });
+    // Utilisation de queueScheduler pour les calculs intensifs
+    queueScheduler.schedule(() => {
+      try {
+        const currentState = damState.value;
+        
+        // Validation et calculs déplacés dans queueScheduler
+        if (!validateDamState(currentState)) {
+          throw new Error('Invalid dam state');
+        }
 
-      // Validation des valeurs
-      if (typeof currentState.currentWaterLevel !== 'number' || isNaN(currentState.currentWaterLevel)) {
+        const { newWaterLevel, newInflowRate, newOutflowRate } = calculateNewDamState(currentState);
+
+        // Mise à jour d'état via asyncScheduler
         asyncScheduler.schedule(() => {
-          loggingService.error('Invalid currentWaterLevel:', "DamSimulation", { error: 'Invalid currentWaterLevel' });
+          currentWaterLevel.next(newWaterLevel);
+          damState.next({
+            ...currentState,
+            currentWaterLevel: newWaterLevel,
+            inflowRate: newInflowRate,
+            outflowRate: newOutflowRate,
+            lastUpdated: new Date()
+          });
         });
-        return;
+
+      } catch (error) {
+        loggingService.error('Error updating water level', 'DamSimulation', { error });
       }
-
-      if (typeof currentState.maxWaterLevel !== 'number' || isNaN(currentState.maxWaterLevel)) {
-        asyncScheduler.schedule(() => {
-          loggingService.error('Invalid maxWaterLevel:', "DamSimulation", { error: 'Invalid maxWaterLevel' });
-        });
-        return;
-      }
-
-      // Simuler les changements de débits de manière asynchrone
-      const inflowChange = (Math.random() - 0.5) * 2;
-      const outflowChange = (Math.random() - 0.5) * 2;
-
-      const newInflowRate = Math.max(0, currentState.inflowRate + inflowChange);
-      const newOutflowRate = Math.max(0, currentState.outflowRate + outflowChange);
-
-      // Calculer le changement net du niveau d'eau
-      const netChange = (newInflowRate - newOutflowRate) / 100;
-
-      const newWaterLevel = Math.max(
-        currentState.minWaterLevel,
-        Math.min(currentState.currentWaterLevel + netChange, currentState.maxWaterLevel)
-      );
-
-      if (isNaN(newWaterLevel)) {
-        asyncScheduler.schedule(() => {
-          loggingService.error('Calculated water level is NaN', "DamSimulation", { error: 'Calculated water level is NaN' });
-        });
-        return;
-      }
-
-      // Logging asynchrone du nouvel état
-      asyncScheduler.schedule(() => {
-        loggingService.info('New state:', "DamSimulation", {
-          waterLevel: newWaterLevel,
-          inflowRate: newInflowRate,
-          outflowRate: newOutflowRate
-        });
-      });
-
-      currentWaterLevel.next(newWaterLevel);
-      damState.next({
-        ...currentState,
-        currentWaterLevel: newWaterLevel,
-        inflowRate: newInflowRate,
-        outflowRate: newOutflowRate,
-        lastUpdated: new Date()
-      });
     });
   };
 
   const startSimulation = () => {
-    asyncScheduler.schedule(() => {
-      loggingService.info("Simulation started", "DamSimulation");
-    });
-
-    // Création du flux de simulation avec scheduler
     const simulation$ = interval(1000, asyncScheduler).pipe(
       observeOn(asyncScheduler),
       tap(() => {
-        asyncScheduler.schedule(() => {
-          loggingService.info("Processing simulation update", "DamSimulation");
-        });
+        loggingService.info('Processing simulation update', 'DamSimulation');
+      }),
+      retry({
+        delay: (error, retryCount) => {
+          loggingService.error('Simulation error, retrying...', 'DamSimulation', { 
+            error, 
+            retryCount 
+          });
+          return timer(Math.min(1000 * Math.pow(2, retryCount), 10000)); // Backoff exponentiel plafonné à 10s
+        },
+        count: 3 // Nombre maximum de tentatives
+      }),
+      takeUntil(destroy$),
+      finalize(() => {
+        loggingService.info('Simulation stream finalized', 'DamSimulation');
+      }),
+      catchError(error => {
+        loggingService.error('Max retries reached', 'DamSimulation', { error });
+        return EMPTY;
       }),
       share()
     );
@@ -120,11 +122,10 @@ export function createDamSimulation(initialState: DamInterface): DamSimulationIn
   };
 
   const cleanup = () => {
-    asyncScheduler.schedule(() => {
-      loggingService.info("Cleaning up simulation", "DamSimulation");
-      damState.complete();
-      currentWaterLevel.complete();
-    });
+    destroy$.next();
+    destroy$.complete();
+    damState.complete();
+    currentWaterLevel.complete();
   };
 
   return {
@@ -133,4 +134,30 @@ export function createDamSimulation(initialState: DamInterface): DamSimulationIn
     startSimulation,
     cleanup
   };
+}
+
+// Fonctions utilitaires
+function validateDamState(state: DamInterface): boolean {
+  return (
+    typeof state.currentWaterLevel === 'number' && 
+    !isNaN(state.currentWaterLevel) &&
+    typeof state.maxWaterLevel === 'number' && 
+    !isNaN(state.maxWaterLevel)
+  );
+}
+
+function calculateNewDamState(currentState: DamInterface) {
+  const inflowChange = (Math.random() - 0.5) * 2;
+  const outflowChange = (Math.random() - 0.5) * 2;
+
+  const newInflowRate = Math.max(0, currentState.inflowRate + inflowChange);
+  const newOutflowRate = Math.max(0, currentState.outflowRate + outflowChange);
+  const netChange = (newInflowRate - newOutflowRate) / 100;
+
+  const newWaterLevel = Math.max(
+    currentState.minWaterLevel,
+    Math.min(currentState.currentWaterLevel + netChange, currentState.maxWaterLevel)
+  );
+
+  return { newWaterLevel, newInflowRate, newOutflowRate };
 }

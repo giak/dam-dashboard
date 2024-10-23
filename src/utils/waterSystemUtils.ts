@@ -1,14 +1,33 @@
 import type { DamServiceInterface } from '@services/damService';
 import type { GlacierServiceInterface } from '@services/glacierService';
+import { loggingService } from '@services/loggingService';
 import type { RiverServiceInterface } from '@services/riverService';
 import type { WeatherServiceInterface } from '@services/weatherService';
 import type { DamInterface } from '@type/dam/DamInterface';
 import type { GlacierStateInterface } from '@type/glacier/GlacierStateInterface';
 import type { RiverStateInterface } from '@type/river/RiverStateInterface';
-import type { MainWeatherStationInterface } from '@type/weather/WeatherStationInterface';
 import type { SystemStateInterface } from '@type/waterSystem';
-import { BehaviorSubject, Observable, Subject } from 'rxjs';
-import { catchError, distinctUntilChanged, map, takeUntil } from 'rxjs/operators';
+import type { MainWeatherStationInterface } from '@type/weather/WeatherStationInterface';
+import {
+  BehaviorSubject,
+  EMPTY,
+  Observable,
+  Subject,
+  asyncScheduler,
+  timer
+} from 'rxjs';
+import {
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  finalize,
+  map,
+  observeOn,
+  retry,
+  shareReplay,
+  takeUntil,
+  tap
+} from 'rxjs/operators';
 
 export function createServicesUtil() {
   return {
@@ -30,7 +49,25 @@ export function createStatesUtil() {
 
 export function createTotalInflowObservableUtil(aggregatedInflow$: Observable<{ totalInflow: number }>) {
   return aggregatedInflow$.pipe(
-    map(aggregatedInflow => aggregatedInflow.totalInflow)
+    observeOn(asyncScheduler),
+    debounceTime(100),
+    map(aggregatedInflow => aggregatedInflow.totalInflow),
+    distinctUntilChanged(),
+    retry({
+      count: 3,
+      delay: (error, retryCount) => {
+        loggingService.error('Inflow calculation error, retrying...', 'waterSystemUtils', { 
+          error, 
+          retryCount 
+        });
+        return timer(Math.min(1000 * Math.pow(2, retryCount), 10000));
+      }
+    }),
+    catchError(error => {
+      loggingService.error('Error calculating total inflow', 'waterSystemUtils', { error });
+      return EMPTY;
+    }),
+    shareReplay(1)
   );
 }
 
@@ -44,10 +81,20 @@ export function updateSystemState(
   key: keyof SystemStateInterface,
   value: any
 ) {
-  const currentState = systemState$.getValue();
-  if (currentState[key] !== value) {
-    systemState$.next({ ...currentState, [key]: value });
-  }
+  asyncScheduler.schedule(() => {
+    const currentState = systemState$.getValue();
+    if (currentState[key] !== value) {
+      systemState$.next({ ...currentState, [key]: value });
+      
+      // Logging asynchrone
+      asyncScheduler.schedule(() => {
+        loggingService.info('System state updated', 'waterSystemUtils', { 
+          key, 
+          value 
+        });
+      }, 0, { priority: -1 });
+    }
+  });
 }
 
 export function subscribeToState<T>(
@@ -58,11 +105,31 @@ export function subscribeToState<T>(
   errorHandler: (context: string, error: any) => void
 ) {
   return state$.pipe(
-    takeUntil(destroy$),
+    observeOn(asyncScheduler),
+    debounceTime(100),
     distinctUntilChanged(),
+    tap(state => {
+      asyncScheduler.schedule(() => {
+        loggingService.info('State update received', 'waterSystemUtils', { 
+          key, 
+          state 
+        });
+      }, 0, { priority: -1 });
+    }),
+    retry({
+      count: 3,
+      delay: (error, retryCount) => {
+        errorHandler(`State subscription error, retrying... (${key})`, error);
+        return timer(Math.min(1000 * Math.pow(2, retryCount), 10000));
+      }
+    }),
+    takeUntil(destroy$),
+    finalize(() => {
+      loggingService.info(`State subscription finalized for ${key}`, 'waterSystemUtils');
+    }),
     catchError(error => {
       errorHandler(`useWaterSystem.${key}State$`, error);
-      return new Observable<T | null>();
+      return EMPTY;
     })
   ).subscribe(state => updateSystemState(systemState$, key, state));
 }

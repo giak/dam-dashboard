@@ -1,7 +1,31 @@
 import type { GlacierStateInterface } from '@type/glacier/GlacierInterface';
 import { updateGlacierState } from '@utils/glacier/glacierUtils';
-import { BehaviorSubject, Observable, asyncScheduler, interval } from 'rxjs';
-import { distinctUntilChanged, map, observeOn, share, tap, withLatestFrom } from 'rxjs/operators';
+import {
+  asyncScheduler,
+  BehaviorSubject,
+  EMPTY,
+  interval,
+  Observable,
+  queueScheduler,
+  Subject,
+  timer
+} from 'rxjs';
+import {
+  bufferTime,
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  distinctUntilKeyChanged,
+  filter,
+  finalize,
+  map,
+  observeOn,
+  retry,
+  share,
+  takeUntil,
+  tap,
+  withLatestFrom
+} from 'rxjs/operators';
 import { loggingService } from './loggingService';
 
 const SIMULATION_INTERVAL = 1000; // 1 second
@@ -18,38 +42,65 @@ export function createGlacierSimulation(
   initialState: GlacierStateInterface,
   temperature$: Observable<number>
 ): GlacierSimulationInterface {
-  // État principal avec optimisation des émissions et scheduler
-  const glacierState$ = new BehaviorSubject<GlacierStateInterface>(initialState);
+  const destroy$ = new Subject<void>();
+  const glacierState = new BehaviorSubject<GlacierStateInterface>(initialState);
 
-  // Flux d'état partagé avec optimisation et scheduler
-  const sharedGlacierState$ = glacierState$.pipe(
+  // Optimisation : Flux d'état partagé avec scheduler et gestion d'erreurs
+  const sharedGlacierState$ = glacierState.pipe(
     observeOn(asyncScheduler),
-    distinctUntilChanged((prev, curr) => 
-      prev.volume === curr.volume && 
-      prev.meltRate === curr.meltRate &&
-      prev.outflowRate === curr.outflowRate
-    ),
-    share()
-  );
-
-  // Optimisation du flux de simulation avec scheduler
-  const simulation$ = interval(SIMULATION_INTERVAL, asyncScheduler).pipe(
-    observeOn(asyncScheduler),
-    withLatestFrom(temperature$),
-    map(([, temperature]) => temperature),
-    distinctUntilChanged(),
-    tap(temperature => {
-      asyncScheduler.schedule(() => {
-        loggingService.info('Processing temperature update', 'GlacierSimulation', { temperature });
-      });
+    debounceTime(100), // Évite les mises à jour trop fréquentes
+    distinctUntilKeyChanged('volume'),
+    takeUntil(destroy$),
+    finalize(() => {
+      loggingService.info('Glacier state stream finalized', 'GlacierSimulation');
+    }),
+    catchError(error => {
+      loggingService.error('Error in glacier state stream', 'GlacierSimulation', { error });
+      return EMPTY;
     }),
     share()
   );
 
+  // Optimisation du flux de simulation avec scheduler et gestion d'erreurs
+  const simulation$ = interval(SIMULATION_INTERVAL, asyncScheduler).pipe(
+    observeOn(asyncScheduler),
+    withLatestFrom(temperature$),
+    map(([, temperature]) => temperature),
+    bufferTime(100, undefined, 5), // Buffer max 5 items sur 100ms
+    filter(updates => updates.length > 0),
+    map(updates => updates[updates.length - 1]),
+    distinctUntilChanged(),
+    retry({
+      count: 3,
+      delay: (error, retryCount) => {
+        loggingService.error('Simulation error, retrying...', 'GlacierSimulation', { 
+          error, 
+          retryCount 
+        });
+        return timer(Math.min(1000 * Math.pow(2, retryCount), 10000));
+      }
+    }),
+    tap({
+      next: temperature => {
+        asyncScheduler.schedule(() => {
+          loggingService.info('Processing temperature update', 'GlacierSimulation', { temperature });
+        }, 0, { priority: -1 });
+      },
+      error: error => {
+        loggingService.error('Simulation error', 'GlacierSimulation', { error });
+      },
+      finalize: () => {
+        loggingService.info('Simulation finalized', 'GlacierSimulation');
+      }
+    }),
+    takeUntil(destroy$),
+    share()
+  ) as Observable<number>;
+
   const updateState = (temperatureCelsius: number) => {
-    // Déplacer les calculs et validations vers asyncScheduler
-    asyncScheduler.schedule(() => {
-      const currentState = glacierState$.getValue();
+    // Utilisation de queueScheduler pour les calculs intensifs
+    queueScheduler.schedule(() => {
+      const currentState = glacierState.value;
       
       // Validation des données
       if (typeof currentState.volume !== 'number' || isNaN(currentState.volume)) {
@@ -81,10 +132,9 @@ export function createGlacierSimulation(
         return;
       }
 
-      // Mise à jour de l'état
-      glacierState$.next(newState);
+      glacierState.next(newState);
       
-      // Logging asynchrone
+      // Logging asynchrone avec priorité basse
       asyncScheduler.schedule(() => {
         loggingService.info('Glacier state updated', 'GlacierSimulation', {
           temperature: temperatureCelsius,
@@ -92,7 +142,7 @@ export function createGlacierSimulation(
           outflowRate: newState.outflowRate,
           volume: newState.volume
         });
-      });
+      }, 0, { priority: -1 });
     });
   };
 

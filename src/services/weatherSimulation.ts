@@ -1,6 +1,29 @@
 import type { WeatherDataInterface } from '@type/weather/WeatherStationInterface';
-import { BehaviorSubject, Observable, interval, asyncScheduler, Subscription } from 'rxjs';
-import { map, tap, share, observeOn } from 'rxjs/operators';
+import { 
+  Observable, 
+  interval, 
+  asyncScheduler,
+  queueScheduler, 
+  Subscription, 
+  Subject, 
+  timer, 
+  EMPTY,
+  ReplaySubject
+} from 'rxjs';
+import { 
+  map, 
+  tap, 
+  share, 
+  observeOn, 
+  takeUntil, 
+  finalize, 
+  retry, 
+  catchError,
+  distinctUntilKeyChanged,
+  debounceTime,
+  bufferTime,
+  filter
+} from 'rxjs/operators';
 import { loggingService } from './loggingService';
 
 export interface WeatherSimulationInterface {
@@ -40,14 +63,34 @@ function generateRandomWeatherData(): WeatherDataInterface {
  * @returns WeatherSimulationInterface
  */
 export function createWeatherSimulation(updateInterval: number = DEFAULT_UPDATE_INTERVAL): WeatherSimulationInterface {
-  const weatherData = new BehaviorSubject<WeatherDataInterface>(generateRandomWeatherData());
-  let currentWeather = weatherData.getValue();
+  const destroy$ = new Subject<void>();
+  const weatherData = new ReplaySubject<WeatherDataInterface>(1);
   let simulationSubscription: Subscription | null = null;
+  let currentWeather = generateRandomWeatherData();
+  weatherData.next(currentWeather);
 
-  // Création du flux de simulation avec scheduler
-  const simulation$ = interval(updateInterval, asyncScheduler).pipe(
-    // Utilise asyncScheduler pour les calculs intensifs
+  // Optimisation : Flux de données avec gestion avancée et bufferTime
+  const weatherData$ = weatherData.pipe(
     observeOn(asyncScheduler),
+    bufferTime(100, undefined, 5), // Buffer max 5 items sur 100ms
+    filter((updates): updates is WeatherDataInterface[] => updates.length > 0),
+    map(updates => updates[updates.length - 1]),
+    distinctUntilKeyChanged('temperature'),
+    debounceTime(100),
+    takeUntil(destroy$),
+    finalize(() => {
+      loggingService.info('Weather data stream finalized', 'weatherSimulation');
+    }),
+    catchError(error => {
+      loggingService.error('Error in weather data stream', 'weatherSimulation', { error });
+      return EMPTY;
+    }),
+    share()
+  ) as Observable<WeatherDataInterface>;
+
+  // Création du flux de simulation avec calculs optimisés
+  const simulation$ = interval(updateInterval, asyncScheduler).pipe(
+    observeOn(queueScheduler),
     map(() => {
       const newData: WeatherDataInterface = {
         temperature: Math.max(WEATHER_LIMITS.TEMP_MIN, 
@@ -67,26 +110,41 @@ export function createWeatherSimulation(updateInterval: number = DEFAULT_UPDATE_
       currentWeather = newData;
       return newData;
     }),
-    // Utilise asyncScheduler pour le logging non-bloquant
-    tap(newData => {
-      asyncScheduler.schedule(() => {
-        loggingService.info('Weather data updated', 'weatherSimulation', { newData });
-      });
+    retry({
+      count: 3,
+      delay: (error, retryCount) => {
+        loggingService.error('Simulation error, retrying...', 'weatherSimulation', { 
+          error, 
+          retryCount 
+        });
+        return timer(Math.min(1000 * Math.pow(2, retryCount), 10000));
+      }
     }),
-    // Partage le flux entre tous les abonnés
+    tap({
+      next: (data) => {
+        asyncScheduler.schedule(() => {
+          loggingService.info('Weather data updated', 'weatherSimulation', { data });
+        }, 0, { priority: -1 });
+      },
+      error: (error) => {
+        loggingService.error('Simulation error', 'weatherSimulation', { error });
+      },
+      finalize: () => {
+        loggingService.info('Simulation finalized', 'weatherSimulation');
+      }
+    }),
+    takeUntil(destroy$),
     share()
-  );
-
-  // Expose weatherData$ avec scheduler pour les souscriptions
-  const weatherData$ = weatherData.asObservable().pipe(
-    observeOn(asyncScheduler)
-  );
+  ) as Observable<WeatherDataInterface>;
 
   function startSimulation(): void {
     if (!simulationSubscription) {
-      simulationSubscription = simulation$.subscribe(
-        newData => weatherData.next(newData)
-      );
+      simulationSubscription = simulation$.subscribe({
+        next: newData => weatherData.next(newData),
+        error: (error) => {
+          loggingService.error('Simulation error', 'weatherSimulation', { error });
+        }
+      });
       loggingService.info('Weather simulation started', 'weatherSimulation');
     }
   }
@@ -100,6 +158,8 @@ export function createWeatherSimulation(updateInterval: number = DEFAULT_UPDATE_
   }
 
   function cleanup(): void {
+    destroy$.next();
+    destroy$.complete();
     stopSimulation();
     weatherData.complete();
     loggingService.info('Weather simulation cleaned up', 'weatherSimulation');
